@@ -1,0 +1,630 @@
+[  +76 ms] Unable to locate an Android SDK.
+[   +6 ms] executing: uname -m
+[   +9 ms] Exit code 0 from: uname -m
+[   +1 ms] x86_64
+[  +13 ms] Artifact Instance of 'MaterialFonts' is not required, skipping update.
+[        ] Artifact Instance of 'GradleWrapper' is not required, skipping update.
+[        ] Artifact Instance of 'AndroidGenSnapshotArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'AndroidInternalBuildArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'IOSEngineArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'FlutterWebSdk' is not required, skipping update.
+[        ] Artifact Instance of 'LegacyCanvasKitRemover' is not required, skipping update.
+[        ] Artifact Instance of 'FlutterSdk' is not required, skipping update.
+[        ] Artifact Instance of 'WindowsEngineArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'MacOSEngineArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'LinuxEngineArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'LinuxFuchsiaSDKArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'MacOSFuchsiaSDKArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'FlutterRunnerSDKArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'FlutterRunnerDebugSymbols' is not required, skipping update.
+[        ] Artifact Instance of 'IosUsbArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'IosUsbArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'IosUsbArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'IosUsbArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'IosUsbArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'IosUsbArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'FontSubsetArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'PubDependencies' is not required, skipping update.
+[   +1 ms] executing: [/home/ozgur/flutter/] git -c log.showSignature=false log HEAD -n 1 --pretty=format:%ad --date=iso
+[  +12 ms] Exit code 0 from: git -c log.showSignature=false log HEAD -n 1 --pretty=format:%ad --date=iso
+[        ] 2026-03-17 16:14:01 -0700
+[  +43 ms] Artifact Instance of 'AndroidGenSnapshotArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'AndroidInternalBuildArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'IOSEngineArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'FlutterWebSdk' is not required, skipping update.
+[        ] Artifact Instance of 'FlutterEngineStamp' is not required, skipping update.
+[        ] Artifact Instance of 'LegacyCanvasKitRemover' is not required, skipping update.
+[   +3 ms] Artifact Instance of 'WindowsEngineArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'MacOSEngineArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'LinuxEngineArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'LinuxFuchsiaSDKArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'MacOSFuchsiaSDKArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'FlutterRunnerSDKArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'FlutterRunnerDebugSymbols' is not required, skipping update.
+[  +66 ms] Artifact Instance of 'AndroidGenSnapshotArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'AndroidInternalBuildArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'IOSEngineArtifacts' is not required, skipping update.
+[   +1 ms] Artifact Instance of 'FlutterEngineStamp' is not required, skipping update.
+[   +3 ms] Artifact Instance of 'WindowsEngineArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'MacOSEngineArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'LinuxEngineArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'LinuxFuchsiaSDKArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'MacOSFuchsiaSDKArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'FlutterRunnerSDKArtifacts' is not required, skipping update.
+[        ] Artifact Instance of 'FlutterRunnerDebugSymbols' is not required, skipping update.
+[  +56 ms] Skipping pub get: version match.
+[  +62 ms] Found plugin file_picker at /home/ozgur/.pub-cache/hosted/pub.dev/file_picker-8.3.7/
+[  +32 ms] Found plugin flutter_plugin_android_lifecycle at /home/ozgur/.pub-cache/hosted/pub.dev/flutter_plugin_android_lifecycle-2.0.33/
+[  +39 ms] Found plugin file_picker at /home/ozgur/.pub-cache/hosted/pub.dev/file_picker-8.3.7/
+[  +13 ms] Found plugin flutter_plugin_android_lifecycle at /home/ozgur/.pub-cache/hosted/pub.dev/flutter_plugin_android_lifecycle-2.0.33/
+[  +15 ms] Skipping generating web_plugin_registrant.dart because it is up-to-date.
+[  +17 ms] Found plugin file_picker at /home/ozgur/.pub-cache/hosted/pub.dev/file_picker-8.3.7/
+[  +12 ms] Found plugin flutter_plugin_android_lifecycle at /home/ozgur/.pub-cache/hosted/pub.dev/flutter_plugin_android_lifecycle-2.0.33/
+[   +5 ms] Generating /home/ozgur/eeg_pipeline/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
+[   +2 ms] Skipping generating GeneratedPluginRegistrant.java because it is up-to-date.
+[   +5 ms] Skipping generating generated_plugin_registrant.h because it is up-to-date.
+[   +1 ms] Skipping generating generated_plugin_registrant.cc because it is up-to-date.
+[   +5 ms] Skipping generating generated_plugins.cmake because it is up-to-date.
+[   +2 ms] Skipping generating generated_plugin_registrant.h because it is up-to-date.
+[   +1 ms] Skipping generating generated_plugin_registrant.cc because it is up-to-date.
+[   +1 ms] Skipping generating generated_plugins.cmake because it is up-to-date.
+[   +3 ms] Skipping generating GeneratedPluginRegistrant.h because it is up-to-date.
+[   +2 ms] Skipping generating GeneratedPluginRegistrant.m because it is up-to-date.
+[   +2 ms] Skipping generating GeneratedPluginRegistrant.swift because it is up-to-date.
+[ +214 ms] Launching lib/main.dart on Chrome in debug mode...
+[  +81 ms] Initializing file store
+[   +1 ms] Done initializing file store
+[  +11 ms] Skipping target: gen_localizations
+[   +2 ms] Skipping target: gen_dart_plugin_registrant
+[   +1 ms] Skipping target: _composite
+[   +2 ms] complete
+[   +1 ms] Updating assets
+[   +2 ms] runHooks() with {TargetFile: /home/ozgur/eeg_pipeline/lib/main.dart, BuildMode: debug} and TargetPlatform.web_javascript
+[        ] runHooks() - will perform dart build
+[   +1 ms] Initializing file store
+[        ] Done initializing file store
+[  +10 ms] Skipping target: dart_build
+[        ] Persisting file store
+[   +2 ms] Done persisting file store
+[   +4 ms] runHooks() - done
+[  +80 ms] Waiting for connection from debug service on Chrome...
+[  +17 ms] Found plugin file_picker at /home/ozgur/.pub-cache/hosted/pub.dev/file_picker-8.3.7/
+[  +17 ms] Found plugin flutter_plugin_android_lifecycle at /home/ozgur/.pub-cache/hosted/pub.dev/flutter_plugin_android_lifecycle-2.0.33/
+[  +27 ms] shaderc command: [/home/ozgur/flutter/bin/cache/artifacts/engine/linux-x64/impellerc, --sksl, --iplr, --json, --sl=build/flutter_assets/shaders/ink_sparkle.frag, --spirv=build/flutter_assets/shaders/ink_sparkle.frag.spirv, --input=/home/ozgur/flutter/packages/flutter/lib/src/material/shaders/ink_sparkle.frag, --input-type=frag, --include=/home/ozgur/flutter/packages/flutter/lib/src/material/shaders, --include=/home/ozgur/flutter/bin/cache/artifacts/engine/linux-x64/shader_lib]
+[   +1 ms] shaderc command: [/home/ozgur/flutter/bin/cache/artifacts/engine/linux-x64/impellerc, --sksl, --iplr, --json, --sl=build/flutter_assets/shaders/stretch_effect.frag, --spirv=build/flutter_assets/shaders/stretch_effect.frag.spirv, --input=/home/ozgur/flutter/packages/flutter/lib/src/material/shaders/stretch_effect.frag, --input-type=frag, --include=/home/ozgur/flutter/packages/flutter/lib/src/material/shaders, --include=/home/ozgur/flutter/bin/cache/artifacts/engine/linux-x64/shader_lib]
+[ +302 ms] <- reset
+[   +5 ms] /home/ozgur/flutter/bin/cache/dart-sdk/bin/dartaotruntime /home/ozgur/flutter/bin/cache/dart-sdk/bin/snapshots/frontend_server_aot.dart.snapshot --sdk-root /home/ozgur/flutter/bin/cache/flutter_web_sdk/ --incremental --target=dartdevc --experimental-emit-debug-metadata -DFLUTTER_VERSION=3.41.5 -DFLUTTER_CHANNEL=stable -DFLUTTER_GIT_URL=https://github.com/flutter/flutter.git -DFLUTTER_FRAMEWORK_REVISION=2c9eb20739 -DFLUTTER_ENGINE_REVISION=052f31d115 -DFLUTTER_DART_VERSION=3.11.3 --output-dill /tmp/flutter_tools.WVVDFN/flutter_tool.HEGMTH/app.dill --packages /home/ozgur/eeg_pipeline/.dart_tool/package_config.json -Ddart.vm.profile=false -Ddart.vm.product=false --enable-asserts --track-widget-creation --filesystem-root /tmp/flutter_tools.WVVDFN/flutter_tools.HSIJIB --filesystem-scheme org-dartlang-app --initialize-from-dill build/99111e0c5b6228829e100ef67db14ea2.cache.dill.track.dill --platform file:///home/ozgur/flutter/bin/cache/flutter_web_sdk/kernel/ddc_outline.dill --verbosity=error --dartdevc-canary --dartdevc-module-format=ddc
+[  +16 ms] <- compile org-dartlang-app:/web_entrypoint.dart
+[+14860 ms] Waiting for connection from debug service on Chrome... (completed in 15,2s)
+[        ] Synced 75.6MB.
+[        ] <- accept
+[        ] Caching compiled dill
+[  +58 ms] Launching Chromium (url = http://localhost:46119, headless = false, skipCheck = false, debugPort = null)
+[        ] Will use Chromium executable at google-chrome
+[  +48 ms] Using Google Chrome 145.0.7632.159 
+
+[  +35 ms] executing: uname -m
+[  +13 ms] Exit code 0 from: uname -m
+[        ] x86_64
+[ +183 ms] [CHROME]: [71151:71151:0325/111143.416804:ERROR:ui/gtk/gtk_ui.cc:251] Schema org.gnome.desktop.interface does not have key font-antialiasing
+[  +23 ms] [CHROME]: QSocketNotifier: Can only be used with threads started with QThread
+[ +139 ms] [CHROME]: 
+[        ] [CHROME]: DevTools listening on ws://127.0.0.1:36603/devtools/browser/da028a59-8957-4fa2-ba56-a0d18764f93b
+[ +130 ms] Flutter run key commands.
+[   +2 ms] r Hot reload. 🔥🔥🔥
+[        ] R Hot restart.
+[        ] h List all available interactive commands.
+[        ] d Detach (terminate "flutter run" but leave application running).
+[        ] c Clear the screen
+[        ] q Quit (terminate the application on the device).
+[ +809 ms] DwdsInjector: Received request for entrypoint at http://localhost:46119/main_module.bootstrap.js
+[   +4 ms] MetadataProvider: Loading debug metadata...
+[   +3 ms] MetadataProvider: Loaded debug metadata for module: web_entrypoint.dart
+[        ] MetadataProvider: Loaded debug metadata for module: web_plugin_registrant.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter_web_plugins/flutter_web_plugins.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter_web_plugins/src/plugin_registry.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/undo_manager.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/foundation.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/unicode.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/timeline.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/constants.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/_timeline_web.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/meta/meta.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/meta/meta_meta.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/synchronous_future.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/stack_frame.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/object.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/service_extensions.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/serialization.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/print.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/_platform_web.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/basic_types.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/persistent_hash_map.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/observer_list.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/node.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/licenses.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/key.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/_isolates_web.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/consolidate_response.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/collections.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/change_notifier.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/capabilities.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/_capabilities_web.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/_bitfield_web.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/binding.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/annotations.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/text_layout_metrics.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/text_editing.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/text_editing_delta.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/vector_math/vector_math_64.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/scheduler.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/scheduler/ticker.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/scheduler/binding.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/scheduler/priority.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/scheduler/service_extensions.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/scheduler/debug.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/collection/collection.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/collection/src/wrappers.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/collection/src/union_set_controller.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/collection/src/union_set.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/collection/src/queue_list.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/collection/src/priority_queue.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/collection/src/utils.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/collection/src/list_extensions.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/collection/src/equality.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/collection/src/comparators.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/collection/src/algorithms.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/collection/src/iterable_zip.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/collection/src/iterable_extensions.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/collection/src/functions.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/collection/src/equality_set.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/collection/src/equality_map.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/collection/src/combined_wrappers/combined_map.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/collection/src/combined_wrappers/combined_iterable.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/collection/src/combined_wrappers/combined_iterator.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/collection/src/combined_wrappers/combined_list.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/collection/src/canonicalized_map.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/collection/src/boollist.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/keyboard_key.g.dart
+[   +2 ms] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/keyboard_maps.g.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/binary_messenger.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/service_extensions.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/keyboard_inserted_content.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/text_formatter.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/characters/characters.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/characters/src/extensions.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/characters/src/characters_impl.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/characters/src/grapheme_clusters/table.dart
+[   +1 ms] MetadataProvider: Loaded debug metadata for module: packages/characters/src/grapheme_clusters/constants.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/characters/src/grapheme_clusters/breaks.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/text_boundary.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/system_sound.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/system_navigator.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/spell_check.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/sensitive_content.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/scribe.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/process_text.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/predictive_back_event.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/platform_views.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/gestures.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/velocity_tracker.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/lsq_solver.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/events.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/gesture_settings.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/constants.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/binding.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/pointer_signal_resolver.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/pointer_router.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/hit_test.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/arena.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/debug.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/resampler.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/converter.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/team.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/tap_and_drag.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/tap.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/recognizer.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/gesture_details.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/scale.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/monodrag.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/drag_details.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/drag.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/multitap.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/multidrag.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/long_press.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/force_press.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/gestures/eager.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/mouse_tracking.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/mouse_cursor.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/live_text.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/haptic_feedback.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/font_loader.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/flutter_version.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/flavor.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/deferred_component.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/browser_context_menu.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/services/asset_manifest.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter_web_plugins/src/plugin_event_channel.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter_web_plugins/src/navigation/utils.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter_web_plugins/src/navigation/url_strategy.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/file_picker/_internal/file_picker_web.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/file_picker/src/windows/file_picker_windows_stub.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/path/src/path_set.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/path/src/utils.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/path/src/characters.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/path/src/path_exception.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/file_picker/src/platform_file.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/cross_file/cross_file.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/cross_file/src/x_file.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/cross_file/src/web_helpers/web_helpers.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/cross_file/src/types/base.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/helpers/renames.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/helpers/lists.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/web_animations_2.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/server_timing.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/css_typed_om.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/geometry.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/pointerlock.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/fullscreen.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/css_view_transitions.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webidl.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webcryptoapi.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/video_rvfc.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/vibration.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/trusted_types.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/trust_token_api.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/referrer_policy.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/private_network_access.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/attribution_reporting_api.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/requestidlecallback.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/mediasession.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/screen_capture.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/image_capture.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/media_playback_quality.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/entries_api.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/fido.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/web_otp.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/fedcm.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/digital_identities.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webxr_hand_input.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webvtt.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webtransport.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/websockets.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webrtc_priority.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webrtc_identity.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webrtc_encoded_transform.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webrtc.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/mst_content_hint.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webgpu.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webgl_multi_draw.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webgl1.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webgl_lose_context.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webgl_draw_buffers.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webgl_depth_texture.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webgl_debug_shaders.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webgl_debug_renderer_info.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webgl_compressed_texture_s3tc_srgb.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webgl_compressed_texture_s3tc.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webgl_compressed_texture_pvrtc.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webgl_compressed_texture_etc1.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webgl_compressed_texture_etc.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webgl_compressed_texture_astc.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webgl_color_buffer_float.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webgl2.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webcodecs_vp9_codec_registration.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webcodecs_hevc_codec_registration.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webcodecs_avc_codec_registration.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webcodecs_av1_codec_registration.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webcodecs.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/webaudio.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/web_bluetooth.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/wasm_js_api.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/url.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/touch_events.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/svg_animations.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/sanitizer_api.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/saa_non_cookie_storage.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/resize_observer.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/reporting.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/pointerevents.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/paint_timing.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/ovr_multiview2.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/orientation_sensor.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/generic_sensor.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/orientation_event.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/oes_vertex_array_object.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/oes_texture_half_float_linear.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/oes_texture_half_float.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/oes_texture_float_linear.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/oes_texture_float.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/oes_standard_derivatives.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/oes_fbo_render_mipmap.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/oes_element_index_uint.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/oes_draw_buffers_indexed.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/mediastream_recording.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/mediacapture_transform.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/mediacapture_fromelement.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/mathml_core.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/largest_contentful_paint.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/khr_parallel_shader_compile.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/intersection_observer.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/gyroscope.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/filter_effects.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/ext_texture_norm16.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/ext_texture_filter_anisotropic.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/ext_texture_compression_rgtc.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/ext_texture_compression_bptc.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/ext_srgb.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/ext_shader_texture_lod.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/ext_frag_depth.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/ext_float_blend.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/ext_disjoint_timer_query_webgl2.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/ext_disjoint_timer_query.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/ext_color_buffer_half_float.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/ext_color_buffer_float.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/ext_blend_minmax.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/encoding.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/dom_parsing.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/css_view_transitions_2.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/css_transitions_2.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/css_transitions.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/css_paint_api.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/css_masking.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/css_fonts.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/css_counter_styles.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/css_contain.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/css_conditional_5.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/css_conditional.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/css_cascade_6.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/css_cascade.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/css_animations_2.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/css_animations.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/csp.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/cookie_store.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/console.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/compression.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/angle_instanced_arrays.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/dom/accelerometer.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/helpers/enums.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/helpers/extensions.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/web/src/helpers/cross_origin.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/file_picker/src/file_picker_result.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/file_picker/src/file_picker.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/plugin_platform_interface/plugin_platform_interface.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/eeg_simple/main.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/eeg_simple/ica.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/eeg_simple/eeg_signal.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/material.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/cupertino/text_form_field_row.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/painting.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/placeholder_span.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/text_scaler.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/basic_types.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/colors.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/star_border.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/stadium_border.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/rounded_rectangle_border.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/circle_border.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/borders.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/edge_insets.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/debug.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/border_radius.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/shape_decoration.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/_network_image_web.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/image_stream.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/image_cache.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/binding.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/shader_warm_up.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/_web_image_info_web.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/web.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/gradient.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/alignment.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/decoration_image.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/box_fit.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/decoration.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/box_shadow.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/box_decoration.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/box_border.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/paint_utilities.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/oval_border.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/notched_shapes.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/matrix_utils.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/linear_border.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/image_resolution.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/image_decoder.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/geometry.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/fractional_offset.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/flutter_logo.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/continuous_rectangle_border.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/clip.dart
+[   +1 ms] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/painting/beveled_rectangle_border.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/rendering/service_extensions.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/semantics.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/semantics/semantics_service.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/semantics/semantics_event.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/semantics/semantics.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/semantics/binding.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/semantics/debug.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/physics.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/physics/utils.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/physics/tolerance.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/physics/spring_simulation.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/physics/simulation.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/physics/gravity_simulation.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/physics/friction_simulation.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/physics/clamped_simulation.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/widgets/scroll_simulation.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/widgets/service_extensions.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/widgets/constants.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/widgets/_web_browser_detection_web.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/foundation/_features.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/widgets/icon_data.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/rendering/table_border.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/rendering/image_filter_config.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/widgets/standard_component_type.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/widgets/date.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/user_accounts_drawer_header.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/time.dart
+[   +4 ms] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/colors.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/material_color_utilities.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/utils/string_utils.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/utils/color_utils.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/utils/math_utils.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/temperature/temperature_cache.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/hct/hct.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/hct/viewing_conditions.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/hct/src/hct_solver.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/hct/cam16.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/score/score.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/scheme/scheme_vibrant.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/palettes/tonal_palette.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/dynamiccolor/variant.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/dynamiccolor/src/tone_delta_pair.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/dynamiccolor/src/contrast_curve.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/contrast/contrast.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/dislike/dislike_analyzer.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/scheme/scheme_tonal_spot.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/scheme/scheme_rainbow.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/scheme/scheme_neutral.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/scheme/scheme_monochrome.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/scheme/scheme_fruit_salad.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/scheme/scheme_fidelity.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/scheme/scheme_expressive.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/scheme/scheme_content.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/scheme/scheme.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/palettes/core_palette.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/quantize/quantizer_wu.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/quantize/quantizer_map.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/quantize/quantizer.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/quantize/quantizer_wsmeans.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/quantize/src/point_provider_lab.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/quantize/src/point_provider.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/quantize/quantizer_celebi.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/material_color_utilities/blend/blend.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/material_state.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/input_border.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/constants.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/tooltip_visibility.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/icons.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/material_state_mixin.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/curves.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/motion.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/bottom_sheet_theme.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/tab_indicator.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/tab_controller.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/drawer_header.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/toggle_buttons.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/time_picker.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/text_form_field.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/text_field.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/text_selection.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/text_selection_toolbar_text_button.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/text_selection_toolbar.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/spell_check_suggestions_toolbar.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/spell_check_suggestions_toolbar_layout_delegate.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/adaptive_text_selection_toolbar.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/desktop_text_selection_toolbar_button.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/desktop_text_selection_toolbar.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/selectable_text.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/magnifier.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/desktop_text_selection.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/dialog.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/switch_list_tile.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/switch.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/shadows.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/stepper.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/selection_area.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/segmented_button.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/search_anchor.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/back_button.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/search.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/reorderable_list.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/refresh_indicator.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/progress_indicator.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/range_slider.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/radio_list_tile.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/popup_menu.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/paginated_data_table.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/dropdown.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/data_table_source.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/data_table.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/card.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/page.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/no_splash.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/mergeable_material.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/input_date_picker_form_field.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/date.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/input_chip.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/chip.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/grid_tile_bar.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/grid_tile.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/filter_chip.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/expansion_tile.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/expansion_panel.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/expand_icon.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/dropdown_menu_form_field.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/dropdown_menu.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/date_picker.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/calendar_date_picker.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/circle_avatar.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/choice_chip.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/checkbox_list_tile.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/button_bar.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/bottom_app_bar.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/badge.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/autocomplete.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/arc.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/app.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/animated_icons.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/action_chip.dart
+[        ] MetadataProvider: Loaded debug metadata for module: packages/flutter/src/material/about.dart
+[   +9 ms] DwdsInjector: Injected debugging metadata for entrypoint at http://localhost:46119/main_module.bootstrap.js
+[+1927 ms] DevHandler: VmService proxy responded with an error:
+           {jsonrpc: 2.0, id: 3, error: {code: -32602, message: The stream `Timer` is not supported on web devices}}
+[  +26 ms] DwdsVmClient: Registering service extension: ext.dwds.emitEvent
+[        ] DwdsVmClient: Registering service extension: ext.dwds.reload
+[        ] DwdsVmClient: Registering service extension: ext.dwds.restart
+[        ] DwdsVmClient: Registering service extension: ext.dwds.screenshot
+[        ] DwdsVmClient: Registering service extension: ext.dwds.sendEvent
+[        ] DwdsVmClient: Registering service extension: _flutter.listViews
+[  +21 ms] DevHandler: Debug service listening on ws://127.0.0.1:40695/uxDB_7gflQ0=/ws
+
+[+2825 ms] ChromeProxyService: Initializing expression compiler for main_module.bootstrap.js
+[  +54 ms] DevHandler: Chrome proxy service initialized successfully
+[   +1 ms] ChromeProxyService: Caching package:flutter/src/widgets/widget_inspector.dart in expression compiler worker
+[   +8 ms] DevHandler: VmService proxy responded with an error:
+           {jsonrpc: 2.0, id: 10, error: {code: -32601, message: Method not found, data: {jsonrpc: 2.0, method: _setStreamIncludePrivateMembers, id: 10, params: {streamId: Stdout, includePrivateMembers: false}}}}
+[   +1 ms] DevHandler: VmService proxy responded with an error:
+           {jsonrpc: 2.0, id: 11, error: {code: -32601, message: Method not found, data: {jsonrpc: 2.0, method: _setStreamIncludePrivateMembers, id: 11, params: {streamId: Stderr, includePrivateMembers: false}}}}
+[  +10 ms] DevHandler: VmService proxy responded with an error:
+           {jsonrpc: 2.0, id: 13, error: {code: -32601, message: Method not found, data: {jsonrpc: 2.0, method: _setStreamIncludePrivateMembers, id: 13, params: {streamId: Isolate, includePrivateMembers: false}}}}
+[   +7 ms] DevHandler: VmService proxy responded with an error:
+           {jsonrpc: 2.0, id: 14, error: {code: -32601, message: Method not found, data: {jsonrpc: 2.0, method: _setStreamIncludePrivateMembers, id: 14, params: {streamId: Extension, includePrivateMembers: false}}}}
+[   +2 ms] Debug service listening on ws://127.0.0.1:40695/uxDB_7gflQ0=/ws
+[        ] A Dart VM Service on Chrome is available at: http://127.0.0.1:40695/uxDB_7gflQ0=
+[   +1 ms] The Flutter DevTools debugger and profiler on Chrome is available at: http://127.0.0.1:40695/uxDB_7gflQ0=/devtools/?uri=ws://127.0.0.1:40695/uxDB_7gflQ0=/ws
+[  +22 ms] Starting application from main method in: org-dartlang-app:/web_entrypoint.dart.
+[ +180 ms] ExpressionEvaluator: Evaluating "() { return true; }" at packages/flutter/src/cupertino/text_form_field_row.dart
+[  +15 ms] ExpressionEvaluator: Evaluating JS: "function () {
+             try {
+               return ((() => {var sentinel = {}; var output = function() {
+                   let dart = dartDevEmbedder.importLibrary("dart:_runtime", function(lib) {
+                     dart = lib;
+                   });
+                   let dart_rti = dartDevEmbedder.importLibrary("dart:_rti", function(lib) {
+                     dart_rti = lib;
+                   });
+                   let dartx = dartDevEmbedder.importLibrary("dartx", function(lib) {
+                     dartx = lib;
+                   });
+                   var T = {
+                     VoidTobool: () => (T.VoidTobool = dart.constFn(dart_rti._Universe.eval(dart.typeUniverse, "core|bool()", true)))()
+                   };
+                   return dart.fn(() => true, T.VoidTobool());
+                 }(); if (output === sentinel) throw Error("Value not found in scope");return output?._boundMethod || output;})())();
+             } catch (error) {
+               return error.name + ": " + error.message;
+             }
+           }" with scope: {}
+[ +129 ms] ExpressionEvaluator: Evaluated "() { return true; }" to "{type: boolean, value: true}"
