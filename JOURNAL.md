@@ -184,4 +184,243 @@ List<double> _filtfilt(List<double> x, List<double> b, List<double> a) {
 
 ---
 
+### [13 avr. 2026] — Transition vers architecture backend Python + frontend Flutter
+
+#### Contexte
+La version initiale (branche `master`) implémentait tout en Dart on-device : parsing EDF, filtres IIR, FastICA. Cette approche posait un problème fondamental : réimplémenter from scratch des algorithmes matures (filtres, ICA) dans un langage peu adapté au traitement numérique, alors que Python dispose d'écosystèmes éprouvés (MNE, NumPy, scikit-learn).
+
+Décision : migrer le traitement de données vers un backend Python local, Flutter restant exclusivement pour l'affichage. Cette stratégie reste conforme au cahier des charges ("backend sur laptop local acceptable si on-device s'avère infaisable").
+
+#### Nouvelle architecture
+
+```
+Fichier EDF
+      ↓
+Flutter — file picker → HTTP POST
+      ↓
+Backend Python (FastAPI)
+  - Lecture EDF via MNE (mne.io.read_raw_edf)
+  - Préprocessing, ICA — à venir
+  - Simulation temps réel (fenêtre glissante)
+      ↓
+WebSocket (ws://localhost:8000/ws)
+      ↓
+Flutter — affichage signal scrollant (inchangé visuellement)
+```
+
+#### Ce qui a changé
+
+**Supprimé de `lib/` :**
+- `ica.dart` — FastICA réimplémenté en Dart (remplacé par scikit-learn côté Python)
+- `preprocessing.dart` — filtres IIR Dart (remplacé par MNE/SciPy)
+- `eeg_signal.dart`, `edf_chunked_reader*.dart` — parsing EDF Dart (remplacé par `mne.io.read_raw_edf`)
+
+Ces fichiers sont conservés dans `archive_dart_all/` pour référence.
+
+**Créé `backend/` :**
+| Fichier | Rôle |
+|---------|------|
+| `main.py` | FastAPI — endpoint `/upload` (HTTP POST EDF) + `/ws` (WebSocket stream) |
+| `requirements.txt` | fastapi, uvicorn, mne, numpy, python-multipart |
+
+**`lib/main.dart` — côté Flutter :**
+- Suppression de toute logique de traitement de signal
+- Ajout upload HTTP multipart (`file_picker` + `http`)
+- Connexion WebSocket automatique après upload réussi
+- Réception messages `meta` (infos canaux) et `window` (données fenêtre)
+- Visuel identique : même `_SignalPreview`, `_ChannelRow`, `_MiniPlot`
+
+**Protocole WebSocket (JSON) :**
+```json
+// Backend → Flutter
+{ "type": "meta", "channels": [...], "sampling_rate": 256, "total_samples": 65536, "channel_min": [...], "channel_max": [...] }
+{ "type": "window", "start": 1024, "data": [[...canal 0...], [...canal 1...], ...] }
+{ "type": "done" }
+```
+
+#### Lancement
+```bash
+# Terminal 1 — backend
+cd backend && source venv/bin/activate
+uvicorn main:app --host 0.0.0.0 --port 8000
+
+# Terminal 2 — Flutter
+flutter run -d linux   # ou -d chrome
+```
+
+#### Statut
+- [x] Backend FastAPI opérationnel
+- [x] Upload EDF via Flutter → parsing MNE
+- [x] Stream WebSocket → affichage signal réel
+- [ ] Preprocessing Python (MNE) — à venir
+- [ ] ICA Python (scikit-learn / MNE) — à venir
+
+---
+
+### [15 avr. 2026] — Planification : ICA + classification + affichage dual
+
+#### Objectif de la phase
+
+Passer de la visualisation brute à un pipeline complet d'élimination d'artefacts avec comparaison visuelle avant/après.
+
+#### Architecture cible
+
+```
+Fenêtre EEG (données pré-filtrées, mode offline)
+      ↓
+ICA decomposition (FastICA via MNE)
+      ↓
+Classification des composantes (heuristiques)
+      ↓
+Reconstruction du signal sans composantes artefact
+      ↓
+WebSocket → Flutter : { raw_window, clean_window, labels }
+      ↓
+Affichage côte-à-côte : signal brut | signal nettoyé
+```
+
+#### Angle de recherche retenu
+
+Fine-tuning d'ICLabel sur le corpus **TUAR (TUH EEG Artifact Corpus)**.
+
+**Problème avec ICLabel original :** 7 classes trop larges — CHEW et SHIV sont noyés dans
+"Muscle", ELPP dans "Channel Noise". Impossible d'appliquer une stratégie de retrait différenciée.
+
+**Contribution :** fine-tuner ICLabel pour obtenir 10 classes plus spécifiques issues de TUAR,
+puis définir une stratégie de retrait optimisée par classe.
+
+#### Mapping de classes
+
+| ICLabel original (7) | Modèle fine-tuné (10) | Nouveauté |
+|---------------------|----------------------|-----------|
+| Brain | Brain | — |
+| Eye | EYEM | — |
+| Muscle | MUSC | — |
+| Muscle | CHEW | **nouvelle classe** |
+| Muscle | SHIV | **nouvelle classe** |
+| Channel Noise | ELEC | — |
+| Channel Noise | ELPP | **nouvelle classe** |
+| Heart | Heart | — |
+| Line Noise | Line Noise | — |
+| Other | Other | — |
+
+#### Stratégies de retrait par classe
+
+| Classe | Stratégie |
+|--------|-----------|
+| EYEM | Rejet ICA standard |
+| MUSC | Rejet ICA + filtre passe-bas agressif (>40 Hz) |
+| CHEW | Rejet ICA + masquage temporel (bursts courts) |
+| SHIV | Rejet ICA + filtre bande étroite (fréq. tremblement) |
+| ELEC | Interpolation du canal |
+| ELPP | Détection saut d'amplitude + interpolation |
+| Heart | Rejet ICA standard |
+
+#### Plan d'implémentation en 3 phases
+
+**Phase 1 — Pipeline de données TUAR** (scripts Python indépendants)
+- Parsing EDF TUAR + annotations
+- FastICA sur chaque enregistrement → composantes ICA
+- Extraction features ICLabel (PSD, autocorrélation, topomap scalp)
+- Construction dataset `(features, label_TUAR)`
+
+**Phase 2 — Fine-tuning ICLabel**
+- Chargement des poids ICLabel pré-entraînés (PyTorch)
+- Remplacement de la tête de classification (7 → 10 classes)
+- Entraînement sur TUAR, évaluation sur hold-out
+- Export du modèle fine-tuné (`.pt`)
+
+**Phase 3 — Intégration temps réel**
+- Chargement du modèle dans FastAPI
+- FastICA → features → classification → reconstruction
+- Nouveau message WebSocket `ica_window` (raw + clean + labels)
+- Flutter : double panneau synchronisé (raw | clean)
+- ORICA pour le mode online (après que l'offline fonctionne)
+
+#### Décision d'implémentation
+
+Priorité : faire fonctionner le pipeline complet avec **ICLabel pré-entraîné** (7 classes)
+avant d'attaquer le fine-tuning TUAR. Le fine-tuning vient dans un second temps,
+dans un projet d'entraînement séparé (Colab + Google Drive).
+
+#### Statut
+- [x] Angle de recherche défini (fine-tuning ICLabel sur TUAR)
+- [x] Classes et stratégies de retrait documentées
+- [x] Plan établi : ICLabel pré-entraîné d'abord, fine-tuning TUAR ensuite
+- [ ] Étape 1 — ICLabel pré-entraîné + FastICA + double panneau Flutter
+- [ ] Étape 2 — Fine-tuning ICLabel sur TUAR (projet séparé)
+- [ ] ORICA (mode online)
+
+---
+
+### [15 avr. 2026 (suite)] — Implémentation ORICA pour le mode online
+
+#### Contexte
+Le mode offline utilise FastICA (batch, sur le dataset complet). Pour le mode online
+(streaming lazy depuis un EDF), FastICA est impossible — il ne peut pas traiter un signal
+dont on ne connaît pas encore l'intégralité. ORICA (Online Recursive ICA) résout ce problème :
+il met à jour la matrice de séparation W à chaque fenêtre, sans charger le fichier entier.
+
+#### Algorithme ORICA
+
+ORICA est un algorithme ICA à gradient naturel mis à jour de façon récursive :
+
+```python
+Y = W @ X_whitened               # sources estimées
+f_Y = tanh(Y)                    # non-linéarité super-gaussienne
+lr_t = lr / (1 + t / 100_000)   # taux d'apprentissage décroissant
+W += lr_t * (I - f_Y @ Y.T / N) @ W
+```
+
+Le taux d'apprentissage décroît pour assurer la convergence. W converge vers la
+matrice de séparation des sources indépendantes.
+
+#### Initialisation via ICLabel
+
+À l'activation ICA en mode online :
+1. Lecture d'un buffer de 10 s depuis `_raw` (lazy, sans tout charger)
+2. `compute_ica_offline` sur ce buffer → ICLabel → `exclude` + `labels`
+3. Création de `ORICAProcessor` avec PCA whitening ajusté sur ce buffer
+
+Avantage : ICLabel fournit une classification robuste initiale des composantes ;
+ORICA s'adapte ensuite en temps réel aux changements de signal.
+
+#### Architecture `ORICAProcessor`
+
+| Étape | Détail |
+|-------|--------|
+| Whitening | PCA (sklearn, `whiten=True`), ajusté sur buffer initial |
+| W initial | Identité — converge en ligne vers FastICA |
+| process(X) | Extrait canaux positionnés → PCA → ORICA update → reconstruction |
+| Reconstruction | `pinv(W) @ Y_clean` → `pca.inverse_transform` → signal complet |
+
+Seuls les canaux positionnés (montage standard_1005) participent à l'ICA ;
+les canaux sans position sont retransmis inchangés.
+
+#### Refactoring helper `_get_positioned_channels`
+
+Extraction de la logique de résolution des noms de canaux (strip `.`, lookup
+case-insensitive dans le montage) en une fonction partagée entre
+`compute_ica_offline` et `_init_orica`.
+
+#### Flutter — bouton ICA disponible en online
+
+Le bouton `Icons.psychology` est maintenant actif en mode online (ORICA) et en
+mode offline (FastICA). Le tooltip indique l'algorithme utilisé.
+Le message de statut affiche "ORICA prête" ou "FastICA prête".
+
+#### Fichiers modifiés
+| Fichier | Modification |
+|---------|-------------|
+| `backend/main.py` | `_get_positioned_channels`, `ORICAProcessor`, `_init_orica`, handler `set_ica` online |
+| `lib/main.dart` | Bouton ICA en mode online, tooltip algo, statut "ORICA"/"FastICA" |
+
+#### Statut
+- [x] ORICA implémenté (gradient naturel, whitening PCA)
+- [x] Initialisation via ICLabel sur buffer de 10 s
+- [x] Streaming loop online envoie `ica_window` via ORICA
+- [x] Flutter : bouton ICA activé en mode online
+
+---
+
 *— fin des entrées actuelles —*

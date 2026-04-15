@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemChrome, DeviceOrientation;
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:file_picker/file_picker.dart';
 import 'dart:math' as math;
 import 'dart:async';
+import 'dart:convert';
+import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:http/http.dart' as http;
 
-import 'eeg_signal.dart';
-import 'edf_chunked_reader.dart';
-import 'ica.dart';
+// ── URLs du backend ────────────────────────────────────────────────────────
+// Sur émulateur Android  : 'http://10.0.2.2:8000'
+// Sur appareil physique  : 'http://192.168.x.x:8000'
+// Sur desktop / web      : 'http://localhost:8000'
+const String kBackendHttp = 'http://localhost:8000';
+const String kBackendWs   = 'ws://localhost:8000/ws';
 
 void main() {
   runApp(const MyApp());
@@ -22,9 +27,9 @@ class MyApp extends StatelessWidget {
       title: 'EEG ICA Pipeline',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark(useMaterial3: true).copyWith(
-        colorScheme: ColorScheme.dark(
-          primary: const Color(0xFF4F8EF7),
-          surface: const Color(0xFF1C2130),
+        colorScheme: const ColorScheme.dark(
+          primary: Color(0xFF4F8EF7),
+          surface: Color(0xFF1C2130),
         ),
       ),
       home: const HomePage(),
@@ -44,103 +49,288 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  // ── WebSocket ──────────────────────────────────────────────────────────────
+  WebSocketChannel?   _wsChannel;
+  StreamSubscription? _wsSub;
+  bool _connected  = false;
+  bool _connecting = false;
+  bool _uploading  = false;
+  bool _paused     = false;
 
-  // État de l'application
-  EEGDataSource? _dataSource;
-  ICAResult?     _ica;
-  String         _status  = 'Importe un fichier CSV ou EDF pour commencer';
-  bool           _running = false;
-  int            _progressCurrent = 0;
-  int            _progressTotal   = 0;
+  // ── Métadonnées ────────────────────────────────────────────────────────────
+  List<String> _channelNames = [];
+  double       _samplingRate = 256.0;
+  int          _numSamples   = 0;
+  List<double> _channelMin   = [];
+  List<double> _channelMax   = [];
 
-  // Composantes marquées comme artefacts
-  final Set<int> _artifacts = {};
+  // ── Fenêtre courante ───────────────────────────────────────────────────────
+  List<List<double>> _windowData      = [];
+  List<List<double>> _cleanWindowData = [];
+  int                _windowStart     = 0;
 
-  // ── Import ──────────────────────────────────────────────────────
-  bool   _importing      = false;
-  String _importLabel    = '';
-  double _importProgress = 0.0; // 0.0 = indéterminé, >0 = progression réelle
+  // ── UI ─────────────────────────────────────────────────────────────────────
+  String _status    = 'Lance le serveur Python puis importe un fichier EDF ou CSV';
+  bool   _landscape = false;
+  String _mode      = '';
 
-  // ── Simulation temps réel ────────────────────────────────────────
-  bool   _simulating   = false;
-  bool   _landscape    = false;
-  double _windowPos    = 0.0;
-  Timer? _simTimer;
+  // ── Preprocessing ──────────────────────────────────────────────────────────
+  bool   _showPreprocessing = false;
+  bool   _notchEnabled      = false;
+  double _notchFreq         = 50.0;
+  bool   _lowpassEnabled    = false;
+  double _lowpassCutoff     = 40.0;
 
-  // Fenêtre courante décodée (chargée async depuis le data source)
-  List<List<double>> _windowData   = [];
-  bool               _windowLoading = false;
+  // ── ICA ────────────────────────────────────────────────────────────────────
+  bool         _icaEnabled   = false;
+  bool         _icaComputing = false;
+  List<String> _icaLabels    = [];
+  List<int>    _icaRemoved   = [];
 
-  static const int    _tickMs    = 16;    // ~60 fps — avance interne
-  static const int    _renderMs  = 100;   // 10 fps — rafraîchissement UI
-  static const double _windowSec = 4.0;
+  double _windowSec = 5.0;
+  static const List<double> kWindowOptions = [1, 2, 3, 4, 5, 10, 20, 30, 60, 120, 300];
 
-  int get _windowSize => _dataSource == null
-      ? 256
-      : (_dataSource!.samplingRate * _windowSec).round().clamp(1, _dataSource!.numSamples);
+  int get _windowSize =>
+      (_samplingRate * _windowSec).round().clamp(1, math.max(1, _numSamples));
 
-  double get _stepPerTick => _dataSource!.samplingRate * _tickMs / 1000.0;
+  // ── Commandes WebSocket ───────────────────────────────────────────────────
 
-  int get _windowStart => _windowPos.round();
+  void _setWindowSec(double secs) {
+    setState(() => _windowSec = secs);
+    _wsChannel?.sink.add(jsonEncode({'type': 'set_window', 'seconds': secs}));
+  }
 
-  // ── Chargement + rendu de la fenêtre ────────────────────────────
-  // Appelé uniquement par le timer de rendu (10 fps), pas à chaque tick.
-  Future<void> _loadWindowAsync() async {
-    if (_dataSource == null || _windowLoading) return;
-    _windowLoading = true;
+  void _sendFilters() {
+    _wsChannel?.sink.add(jsonEncode({
+      'type':            'set_filters',
+      'notch_enabled':   _notchEnabled,
+      'notch_freq':      _notchFreq,
+      'lowpass_enabled': _lowpassEnabled,
+      'lowpass_cutoff':  _lowpassCutoff,
+    }));
+  }
+
+  void _toggleIca() {
+    final next = !_icaEnabled;
+    setState(() {
+      _icaEnabled   = next;
+      _icaComputing = next;
+      if (!next) {
+        _cleanWindowData = [];
+        _icaLabels       = [];
+        _icaRemoved      = [];
+      }
+    });
+    _wsChannel?.sink.add(jsonEncode({
+      'type':         'set_ica',
+      'enabled':      next,
+      'n_components': 15,
+    }));
+  }
+
+  // ── Import ────────────────────────────────────────────────────────────────
+
+  Future<void> _importCsv() => _pickAndUpload('csv', 'offline');
+
+  Future<void> _importEdf() async {
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Mode EDF'),
+        content: const Text(
+          'Online — lazy loading, streaming en temps réel\n\n'
+          'Offline — tout en RAM, navigation libre (◀ ▶)',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'online'),
+            child: const Text('Online'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, 'offline'),
+            child: const Text('Offline'),
+          ),
+        ],
+      ),
+    );
+    if (choice == null) return;
+    await _pickAndUpload('edf', choice);
+  }
+
+  Future<void> _pickAndUpload(String ext, String mode) async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.any,
+      withData: true,
+    );
+    if (result == null) return;
+
+    final file = result.files.first;
+    setState(() {
+      _uploading = true;
+      _status    = 'Upload de ${file.name}…';
+    });
+
     try {
-      final start = _windowStart;
-      final size  = _windowSize;
-      final data  = await _dataSource!.getWindow(start, size);
-      if (mounted) setState(() => _windowData = data);
-    } finally {
-      _windowLoading = false;
+      final request = http.MultipartRequest('POST', Uri.parse('$kBackendHttp/upload'));
+      request.files.add(http.MultipartFile.fromBytes('file', file.bytes!, filename: file.name));
+      request.fields['mode'] = mode;
+
+      final response = await request.send();
+      final body     = await response.stream.bytesToString();
+
+      if (response.statusCode == 200) {
+        setState(() => _uploading = false);
+        _connect();
+      } else {
+        setState(() { _uploading = false; _status = 'Erreur upload : $body'; });
+      }
+    } catch (e) {
+      setState(() { _uploading = false; _status = 'Impossible de joindre le backend : $e'; });
     }
   }
 
-  // ── Simulation ───────────────────────────────────────────────────
-  // Deux timers :
-  //   _simTimer   : avance _windowPos à 60fps (pas de setState, pas de rebuild)
-  //   _renderTimer: déclenche le rebuild UI à 10fps seulement
-  Timer? _renderTimer;
+  // ── WebSocket ─────────────────────────────────────────────────────────────
 
-  void _startSimulation() {
-    final windowSize = _windowSize;
-    final maxStart   = (_dataSource!.numSamples - windowSize).toDouble();
-    if (maxStart <= 0) return;
+  void _connect() {
+    if (_connecting || _connected) return;
+    setState(() {
+      _connecting = true;
+      _status     = 'Connexion à $kBackendWs…';
+    });
 
-    setState(() => _simulating = true);
+    _wsChannel = WebSocketChannel.connect(Uri.parse(kBackendWs));
+    _wsSub = _wsChannel!.stream.listen(
+      _onMessage,
+      onError: (e) {
+        if (!mounted) return;
+        setState(() { _connected = false; _connecting = false; _status = 'Erreur WebSocket : $e'; });
+      },
+      onDone: () {
+        if (!mounted) return;
+        setState(() { _connected = false; _connecting = false; _status = 'Déconnecté du serveur'; });
+      },
+      cancelOnError: true,
+    );
 
-    // Timer interne — avance la position sans rebuilder l'UI
-    _simTimer = Timer.periodic(
-      const Duration(milliseconds: _tickMs),
-      (_) {
-        if (!mounted) { _simTimer?.cancel(); return; }
-        if (_windowPos >= maxStart) {
-          _simTimer?.cancel();
-          _renderTimer?.cancel();
-          setState(() => _simulating = false);
-          return;
+    setState(() { _connecting = false; _connected = true; _status = 'Connecté — en attente des données…'; });
+  }
+
+  void _disconnect() {
+    _wsSub?.cancel();
+    _wsChannel?.sink.close();
+    setState(() {
+      _connected       = false;
+      _paused          = false;
+      _mode            = '';
+      _channelNames    = [];
+      _windowData      = [];
+      _cleanWindowData = [];
+      _windowStart     = 0;
+      _icaEnabled      = false;
+      _icaComputing    = false;
+      _icaLabels       = [];
+      _icaRemoved      = [];
+      _status          = 'Déconnecté';
+    });
+  }
+
+  void _reset() {
+    _wsSub?.cancel();
+    _wsChannel?.sink.close();
+    setState(() {
+      _connected       = false;
+      _connecting      = false;
+      _paused          = false;
+      _mode            = '';
+      _channelNames    = [];
+      _windowData      = [];
+      _cleanWindowData = [];
+      _windowStart     = 0;
+      _windowSec       = 5.0;
+      _icaEnabled      = false;
+      _icaComputing    = false;
+      _icaLabels       = [];
+      _icaRemoved      = [];
+      _status          = 'Lance le serveur Python puis importe un fichier EDF ou CSV';
+    });
+  }
+
+  void _seek(double progress) {
+    if (_mode != 'offline') return;
+    final pos = (progress * (_numSamples - _windowSize)).round().clamp(0, _numSamples);
+    _wsChannel?.sink.add(jsonEncode({'type': 'seek', 'position': pos}));
+  }
+
+  void _togglePause() {
+    if (!_connected) return;
+    final next = !_paused;
+    _wsChannel?.sink.add(jsonEncode({'type': next ? 'pause' : 'resume'}));
+    setState(() => _paused = next);
+  }
+
+  void _onMessage(dynamic raw) {
+    final msg = jsonDecode(raw as String) as Map<String, dynamic>;
+    switch (msg['type'] as String) {
+
+      case 'meta':
+        setState(() {
+          _channelNames = List<String>.from(msg['channels'] as List);
+          _samplingRate = (msg['sampling_rate'] as num).toDouble();
+          _numSamples   = msg['total_samples'] as int;
+          _channelMin   = (msg['channel_min'] as List).map((e) => (e as num).toDouble()).toList();
+          _channelMax   = (msg['channel_max'] as List).map((e) => (e as num).toDouble()).toList();
+          _mode         = msg['mode'] as String? ?? 'offline';
+          _status       = '${_channelNames.length} canaux · '
+              '${_samplingRate.toStringAsFixed(0)} Hz · '
+              '${(_numSamples / _samplingRate).toStringAsFixed(0)} s · '
+              '${_mode == 'online' ? 'Online' : 'Offline'}';
+        });
+
+      case 'window':
+        setState(() {
+          _windowStart     = msg['start'] as int;
+          _windowData      = _parseChannels(msg['data'] as List);
+          _cleanWindowData = [];
+        });
+
+      case 'ica_window':
+        setState(() {
+          _windowStart     = msg['start'] as int;
+          _windowData      = _parseChannels(msg['raw'] as List);
+          _cleanWindowData = _parseChannels(msg['clean'] as List);
+          _icaRemoved      = List<int>.from(msg['removed_components'] as List);
+          _icaLabels       = List<String>.from(msg['labels'] as List);
+        });
+
+      case 'ica_status':
+        final status = msg['status'] as String;
+        if (status == 'computing') {
+          setState(() { _icaComputing = true; _status = 'ICA en cours de calcul…'; });
+        } else if (status == 'done') {
+          final removed = List<int>.from(msg['removed_components'] as List);
+          final labels  = List<String>.from(msg['labels'] as List);
+          final algo    = _mode == 'online' ? 'ORICA' : 'FastICA';
+          setState(() {
+            _icaComputing = false;
+            _icaRemoved   = removed;
+            _icaLabels    = labels;
+            _status       = '$algo prête — ${removed.length} composante(s) retirée(s)';
+          });
+        } else if (status == 'error') {
+          setState(() {
+            _icaEnabled   = false;
+            _icaComputing = false;
+            _status       = 'Erreur ICA : ${msg['message']}';
+          });
         }
-        _windowPos = math.min(_windowPos + _stepPerTick, maxStart);
-      },
-    );
 
-    // Timer de rendu — rebuild UI à 10fps
-    _renderTimer = Timer.periodic(
-      const Duration(milliseconds: _renderMs),
-      (_) {
-        if (!mounted || !_simulating) return;
-        _loadWindowAsync();
-      },
-    );
+      case 'done':
+        setState(() { _connected = false; _paused = false; _status = '✓ Simulation terminée'; });
+    }
   }
 
-  void _stopSimulation() {
-    _simTimer?.cancel();
-    _renderTimer?.cancel();
-    setState(() => _simulating = false);
-  }
+  List<List<double>> _parseChannels(List raw) =>
+      raw.map((ch) => (ch as List).map((e) => (e as num).toDouble()).toList()).toList();
 
   void _toggleOrientation() {
     final next = !_landscape;
@@ -150,316 +340,128 @@ class _HomePageState extends State<HomePage> {
     setState(() => _landscape = next);
   }
 
-  void _restartSimulation() {
-    _simTimer?.cancel();
-    _renderTimer?.cancel();
-    _windowPos = 0.0;
-    setState(() => _windowData = []);
-    _loadWindowAsync();
-    _startSimulation();
-  }
-
   @override
   void dispose() {
-    _simTimer?.cancel();
-    _renderTimer?.cancel();
-    _dataSource?.close();
+    _wsSub?.cancel();
+    _wsChannel?.sink.close();
     super.dispose();
   }
 
-  // ── Import fichier ───────────────────────────────────────────────
-  Future<void> _importFile() async {
-    // CSV : withData pour lire le texte
-    // EDF natif : withData: false, on utilise file.path avec RandomAccessFile
-    // EDF web   : withData: true, dart:io indisponible donc chargement complet inévitable
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.any,  // FileType.custom grise les .edf sur Android (MIME inconnu)
-      withData: true,
-    );
-    if (result == null) return;
-
-    final file = result.files.first;
-    final ext  = file.name.toLowerCase().split('.').last;
-
-    setState(() {
-      _importing       = true;
-      _importProgress  = 0.0;
-      _importLabel     = 'Lecture de ${file.name}…';
-      _status          = 'Chargement de ${file.name}…';
-      _running         = true;
-    });
-
-    // Laisse Flutter peindre l'overlay avant de démarrer le travail lourd
-    await Future.delayed(const Duration(milliseconds: 50));
-
-    try {
-      EEGDataSource dataSource;
-
-      if (ext == 'csv') {
-        final content = String.fromCharCodes(file.bytes!);
-        final signal  = EEGCSVParser.parse(content);
-        dataSource    = InMemoryEEGDataSource(signal);
-
-      } else if (ext == 'edf') {
-        if (kIsWeb) {
-          final signal = EEGEDFParser.parse(file.bytes!);
-          dataSource = InMemoryEEGDataSource(signal);
-        } else {
-          setState(() {
-            _importLabel    = 'Analyse du fichier EDF…';
-            _importProgress = 0.0;
-          });
-          dataSource = await EDFChunkedReader.open(
-            file.path!,
-            onProgress: (p) => setState(() {
-              _importProgress = p;
-              _importLabel    = 'Analyse… ${(p * 100).toInt()} %';
-            }),
-          );
-        }
-      } else {
-        throw Exception('Format non supporté : .$ext');
-      }
-
-      // Ferme l'ancien data source si nécessaire
-      await _dataSource?.close();
-
-      setState(() {
-        _dataSource  = dataSource;
-        _ica         = null;
-        _artifacts.clear();
-        _windowPos   = 0.0;
-        _windowData  = [];
-        _running     = false;
-        _importing   = false;
-        _status      = '✓ ${dataSource.numChannels} canaux · '
-                       '${dataSource.numSamples} échantillons · '
-                       '${dataSource.samplingRate.toStringAsFixed(0)} Hz';
-      });
-
-      // Charge la première fenêtre immédiatement
-      _loadWindowAsync();
-
-    } catch (e) {
-      setState(() {
-        _running   = false;
-        _importing = false;
-        _status    = 'ERREUR: $e';
-      });
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('Erreur'),
-          content: Text(e.toString()),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('OK'),
-            ),
-          ],
-        ),
-      );
-    }
-  }
-
-  // ── Lancer ICA ───────────────────────────────────────────────────
-  Future<void> _runICA() async {
-    if (_dataSource == null || _running) return;
-
-    final allData = _dataSource!.allData;
-    if (allData == null) {
-      setState(() => _status = 'ICA non disponible : chargez un fichier CSV '
-          'ou un EDF de taille raisonnable.');
-      return;
-    }
-
-    setState(() {
-      _running         = true;
-      _ica             = null;
-      _artifacts.clear();
-      _progressCurrent = 0;
-      _progressTotal   = _dataSource!.numChannels;
-      _status          = 'ICA en cours…';
-    });
-
-    await Future.delayed(const Duration(milliseconds: 50));
-
-    try {
-      final ica    = SimpleICA(maxIter: 100, tolerance: 1e-4);
-      final result = ica.fit(
-        allData,
-        _dataSource!.samplingRate,
-        onProgress: (current, total) {
-          setState(() {
-            _progressCurrent = current;
-            _progressTotal   = total;
-            _status          = 'ICA : composante $current / $total';
-          });
-        },
-      );
-      setState(() {
-        _ica     = result;
-        _running = false;
-        _status  = '✓ ${result.nComponents} composantes extraites';
-      });
-    } catch (e) {
-      setState(() {
-        _running = false;
-        _status  = 'Erreur ICA : $e';
-      });
-    }
-  }
-
-  // ── Reconstruction ───────────────────────────────────────────────
-  void _reconstruct() {
-    if (_ica == null) return;
-    final cleaned = _ica!.reconstructWithout(_artifacts);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Signal reconstruit : ${cleaned.length} canaux × ${cleaned[0].length} échantillons'
-          ' (${_artifacts.length} IC retirée(s))',
-        ),
-        backgroundColor: Colors.green.shade700,
-      ),
-    );
-  }
-
-  // ── Build ─────────────────────────────────────────────────────────
+  // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
+    final hasData   = _channelNames.isNotEmpty;
+    final isOffline = _mode == 'offline';
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('EEG ICA Pipeline'),
         actions: [
-          // Bouton rotation portrait / paysage
           IconButton(
             icon: Icon(_landscape ? Icons.stay_current_portrait : Icons.stay_current_landscape),
             tooltip: _landscape ? 'Mode portrait' : 'Mode paysage',
             onPressed: _toggleOrientation,
           ),
-          // Bouton Import
-          TextButton.icon(
-            onPressed: _importFile,
-            icon: const Icon(Icons.upload_file),
-            label: const Text('Importer CSV / EDF'),
-          ),
-          const SizedBox(width: 8),
-          // Boutons Simulation
-          if (_dataSource != null && _ica == null) ...[
-            if (_windowStart > 0)
-              IconButton(
-                icon: const Icon(Icons.replay),
-                tooltip: 'Recommencer depuis le début',
-                onPressed: _running ? null : _restartSimulation,
+          if (hasData) ...[
+            // ── Preprocessing ──────────────────────────────────────
+            IconButton(
+              icon: Icon(
+                Icons.tune,
+                color: (_notchEnabled || _lowpassEnabled) ? Colors.teal.shade300 : null,
               ),
-            FilledButton.icon(
-              onPressed: _running ? null : (_simulating ? _stopSimulation : _startSimulation),
-              icon: Icon(_simulating ? Icons.pause : Icons.sensors),
-              label: Text(_simulating ? 'Pause' : 'Simuler temps réel'),
-              style: FilledButton.styleFrom(
-                backgroundColor: _simulating ? Colors.orange.shade800 : Colors.teal.shade700,
-              ),
+              tooltip: 'Preprocessing',
+              onPressed: () => setState(() => _showPreprocessing = !_showPreprocessing),
             ),
-          ],
-          const SizedBox(width: 8),
-          // Bouton Reset
-          if (_dataSource != null)
+            // ── ICA : FastICA (offline) ou ORICA (online) ─────────
+            _icaComputing
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 12),
+                    child: SizedBox(
+                      width: 20, height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : IconButton(
+                    icon: Icon(
+                      Icons.psychology,
+                      color: _icaEnabled ? Colors.purple.shade300 : null,
+                    ),
+                    tooltip: _icaEnabled
+                        ? 'Désactiver ICA'
+                        : isOffline ? 'Activer ICA (FastICA)' : 'Activer ICA (ORICA)',
+                    onPressed: _connected ? _toggleIca : null,
+                  ),
             IconButton(
               icon: const Icon(Icons.close),
-              tooltip: 'Supprimer le dataset',
-              onPressed: () {
-                _stopSimulation();
-                _dataSource?.close();
-                setState(() {
-                  _dataSource = null;
-                  _ica        = null;
-                  _artifacts.clear();
-                  _windowData = [];
-                  _status     = 'Importe un fichier CSV ou EDF pour commencer';
-                });
-              },
+              tooltip: 'Fermer le dataset',
+              onPressed: _reset,
+            ),
+          ],
+          if (!_connected) ...[
+            FilledButton.icon(
+              onPressed: (_uploading || _connecting) ? null : _importCsv,
+              icon: const Icon(Icons.table_chart),
+              label: const Text('CSV'),
+              style: FilledButton.styleFrom(backgroundColor: Colors.indigo.shade700),
+            ),
+            const SizedBox(width: 6),
+            FilledButton.icon(
+              onPressed: (_uploading || _connecting) ? null : _importEdf,
+              icon: (_uploading || _connecting)
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.upload_file),
+              label: Text(_uploading ? 'Upload…' : _connecting ? 'Connexion…' : 'EDF'),
+              style: FilledButton.styleFrom(backgroundColor: Colors.teal.shade700),
+            ),
+          ] else
+            TextButton.icon(
+              onPressed: _disconnect,
+              icon: const Icon(Icons.sensors_off),
+              label: const Text('Déconnecter'),
             ),
           const SizedBox(width: 8),
         ],
       ),
-      body: Stack(
+      body: Column(
         children: [
-          // ── Contenu principal ──────────────────────────────────
-          Column(
-            children: [
-              _StatusBar(
-                status:  _status,
-                running: _running,
-                current: _progressCurrent,
-                total:   _progressTotal,
-              ),
-              Expanded(
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _ica != null
-                          ? _ComponentsView(
-                              ica:           _ica!,
-                              artifacts:     _artifacts,
-                              onToggle:      (i) => setState(() {
-                                if (_artifacts.contains(i)) _artifacts.remove(i);
-                                else _artifacts.add(i);
-                              }),
-                              onReconstruct: _reconstruct,
-                            )
-                          : _dataSource != null
-                              ? _SignalPreview(
-                                  dataSource:  _dataSource!,
-                                  windowData:  _windowData,
-                                  windowStart: _windowStart,
-                                  windowSize:  _windowSize,
-                                  simulating:  _simulating,
-                                  loading:     _windowLoading && _windowData.isEmpty,
-                                )
-                              : const _EmptyView(),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          // ── Overlay import ─────────────────────────────────────
-          if (_importing)
-            Container(
-              color: Colors.black54,
-              child: Center(
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(_importLabel,
-                            style: const TextStyle(fontSize: 14)),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: 240,
-                          child: LinearProgressIndicator(
-                            value: _importProgress > 0 ? _importProgress : null,
-                            minHeight: 6,
-                            borderRadius: BorderRadius.circular(3),
-                          ),
-                        ),
-                        if (_importProgress > 0) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            '${(_importProgress * 100).toInt()} %',
-                            style: const TextStyle(fontSize: 12, color: Colors.grey),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+          _StatusBar(status: _status, running: _connecting || _icaComputing),
+          if (_showPreprocessing && hasData)
+            _PreprocessingBar(
+              notchEnabled:    _notchEnabled,
+              notchFreq:       _notchFreq,
+              lowpassEnabled:  _lowpassEnabled,
+              lowpassCutoff:   _lowpassCutoff,
+              onNotchToggle:   (v) { setState(() => _notchEnabled = v);   _sendFilters(); },
+              onNotchFreq:     (v) { setState(() => _notchFreq = v);      _sendFilters(); },
+              onLowpassToggle: (v) { setState(() => _lowpassEnabled = v); _sendFilters(); },
+              onLowpassCutoff: (v) { setState(() => _lowpassCutoff = v);  _sendFilters(); },
             ),
+          Expanded(
+            child: hasData
+                ? _SignalPreview(
+                    channelNames:    _channelNames,
+                    samplingRate:    _samplingRate,
+                    numSamples:      _numSamples,
+                    channelMin:      _channelMin,
+                    channelMax:      _channelMax,
+                    windowData:      _windowData,
+                    cleanWindowData: _cleanWindowData,
+                    windowStart:     _windowStart,
+                    windowSize:      _windowSize,
+                    simulating:      _connected,
+                    paused:          _paused,
+                    onTogglePause:   _togglePause,
+                    offline:         isOffline,
+                    onSeek:          _seek,
+                    windowSec:       _windowSec,
+                    windowOptions:   kWindowOptions,
+                    onWindowChanged: _setWindowSec,
+                    icaLabels:       _icaLabels,
+                    icaRemoved:      _icaRemoved,
+                  )
+                : const _EmptyView(),
+          ),
         ],
       ),
     );
@@ -473,15 +475,7 @@ class _HomePageState extends State<HomePage> {
 class _StatusBar extends StatelessWidget {
   final String status;
   final bool   running;
-  final int    current;
-  final int    total;
-
-  const _StatusBar({
-    required this.status,
-    required this.running,
-    required this.current,
-    required this.total,
-  });
+  const _StatusBar({required this.status, required this.running});
 
   @override
   Widget build(BuildContext context) {
@@ -497,16 +491,12 @@ class _StatusBar extends StatelessWidget {
                 children: [
                   Text(status, style: const TextStyle(fontSize: 12)),
                   const SizedBox(height: 4),
-                  LinearProgressIndicator(
-                    value: total > 0 ? current / total : null,
-                  ),
+                  const LinearProgressIndicator(),
                 ],
               ),
             )
           else
-            Expanded(
-              child: Text(status, style: const TextStyle(fontSize: 12)),
-            ),
+            Expanded(child: Text(status, style: const TextStyle(fontSize: 12))),
         ],
       ),
     );
@@ -528,11 +518,10 @@ class _EmptyView extends StatelessWidget {
         children: [
           Icon(Icons.show_chart, size: 64, color: Colors.grey),
           SizedBox(height: 16),
-          Text('Aucun signal chargé',
-               style: TextStyle(fontSize: 18, color: Colors.grey)),
+          Text('Aucun signal chargé', style: TextStyle(fontSize: 18, color: Colors.grey)),
           SizedBox(height: 8),
-          Text('Clique sur "Importer CSV / EDF" pour commencer',
-               style: TextStyle(color: Colors.grey)),
+          Text('Lance le serveur Python et importe un fichier EDF ou CSV',
+              style: TextStyle(color: Colors.grey)),
         ],
       ),
     );
@@ -540,34 +529,62 @@ class _EmptyView extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────
-//  Aperçu du signal (avant ICA)
+//  Aperçu du signal (mono ou dual panel)
 // ─────────────────────────────────────────────
 
 class _SignalPreview extends StatelessWidget {
-  final EEGDataSource        dataSource;
-  final List<List<double>>   windowData;   // fenêtre déjà décodée
-  final int  windowStart;
-  final int  windowSize;
-  final bool simulating;
-  final bool loading;
+  final List<String>         channelNames;
+  final double               samplingRate;
+  final int                  numSamples;
+  final List<double>         channelMin;
+  final List<double>         channelMax;
+  final List<List<double>>   windowData;
+  final List<List<double>>   cleanWindowData;
+  final int                  windowStart;
+  final int                  windowSize;
+  final bool                 simulating;
+  final bool                 paused;
+  final VoidCallback         onTogglePause;
+  final bool                 offline;
+  final void Function(double) onSeek;
+  final double               windowSec;
+  final List<double>         windowOptions;
+  final void Function(double) onWindowChanged;
+  final List<String>         icaLabels;
+  final List<int>            icaRemoved;
 
   const _SignalPreview({
-    required this.dataSource,
+    required this.channelNames,
+    required this.samplingRate,
+    required this.numSamples,
+    required this.channelMin,
+    required this.channelMax,
     required this.windowData,
+    required this.cleanWindowData,
     required this.windowStart,
     required this.windowSize,
     required this.simulating,
-    required this.loading,
+    required this.paused,
+    required this.onTogglePause,
+    required this.offline,
+    required this.onSeek,
+    required this.windowSec,
+    required this.windowOptions,
+    required this.onWindowChanged,
+    required this.icaLabels,
+    required this.icaRemoved,
   });
+
+  bool get _dualMode => cleanWindowData.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
-    final windowEnd = (windowStart + windowSize).clamp(0, dataSource.numSamples);
-    final tStart    = windowStart / dataSource.samplingRate;
-    final tEnd      = windowEnd   / dataSource.samplingRate;
-    final totalDur  = dataSource.numSamples / dataSource.samplingRate;
-    final progress  = dataSource.numSamples > windowSize
-        ? windowStart / (dataSource.numSamples - windowSize)
+    final windowEnd = (windowStart + windowSize).clamp(0, numSamples);
+    final tStart    = windowStart / samplingRate;
+    final tEnd      = windowEnd   / samplingRate;
+    final totalDur  = numSamples  / samplingRate;
+    final progress  = numSamples > windowSize
+        ? windowStart / (numSamples - windowSize)
         : 0.0;
 
     return Column(
@@ -579,54 +596,124 @@ class _SignalPreview extends StatelessWidget {
           child: Row(
             children: [
               Text(
-                'Signal EEG — ${dataSource.numChannels} canaux',
+                'Signal EEG — ${channelNames.length} canaux',
                 style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
+              if (simulating || paused)
+                IconButton(
+                  icon: Icon(
+                    paused ? Icons.play_arrow : Icons.pause,
+                    color: paused ? Colors.teal.shade300 : Colors.orange.shade300,
+                  ),
+                  tooltip: paused ? 'Reprendre' : 'Pause',
+                  onPressed: onTogglePause,
+                ),
+              const SizedBox(width: 4),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: simulating ? Colors.teal.shade800 : Colors.grey.shade800,
+                  color: paused
+                      ? Colors.orange.shade900
+                      : simulating ? Colors.teal.shade800 : Colors.grey.shade800,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
-                  '${tStart.toStringAsFixed(1)}s – ${tEnd.toStringAsFixed(1)}s'
-                  '  /  ${totalDur.toStringAsFixed(1)}s',
+                  '${tStart.toStringAsFixed(1)}s – ${tEnd.toStringAsFixed(1)}s  /  ${totalDur.toStringAsFixed(1)}s',
                   style: const TextStyle(fontSize: 11),
                 ),
               ),
+              const Spacer(),
+              DropdownButton<double>(
+                value: windowSec,
+                underline: const SizedBox(),
+                isDense: true,
+                style: const TextStyle(fontSize: 12, color: Colors.white70),
+                dropdownColor: const Color(0xFF1C2130),
+                items: windowOptions.map((s) {
+                  final label = s >= 60
+                      ? '${(s ~/ 60)}min${s % 60 > 0 ? ' ${(s % 60).toInt()}s' : ''}'
+                      : '${s.toInt()}s';
+                  return DropdownMenuItem(value: s, child: Text(label));
+                }).toList(),
+                onChanged: (v) { if (v != null) onWindowChanged(v); },
+              ),
+              const SizedBox(width: 8),
             ],
           ),
         ),
-        // ── Barre de position globale ────────────────────────────
+
+        // ── Barre de progression ──────────────────────────────────
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-          child: SizedBox(
-            height: 16,
-            child: CustomPaint(
-              painter: _ProgressScrubber(progress: progress.clamp(0.0, 1.0)),
-              size: const Size(double.infinity, 16),
-            ),
+          child: LayoutBuilder(
+            builder: (_, constraints) {
+              void onTap(double dx) =>
+                  onSeek((dx / constraints.maxWidth).clamp(0.0, 1.0));
+              final scrubber = CustomPaint(
+                painter: _ProgressScrubber(progress: progress.clamp(0.0, 1.0)),
+                size: const Size(double.infinity, 16),
+              );
+              if (!offline) return SizedBox(height: 16, child: scrubber);
+              return GestureDetector(
+                onTapDown:              (d) => onTap(d.localPosition.dx),
+                onHorizontalDragUpdate: (d) => onTap(d.localPosition.dx),
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: SizedBox(height: 16, child: scrubber),
+                ),
+              );
+            },
           ),
         ),
-        // ── Canaux ───────────────────────────────────────────────
+
+        // ── Panneaux de signal ────────────────────────────────────
         Expanded(
-          child: loading
-              ? const Center(child: CircularProgressIndicator())
-              : ListView.builder(
-                  itemCount: dataSource.numChannels,
-                  itemBuilder: (_, i) {
-                    // min/max précompilés dans le dataSource (pas recalculés à chaque frame)
-                    return _ChannelRow(
-                      name: dataSource.channelNames[i],
-                      data: i < windowData.length ? windowData[i] : const [],
-                      yMin: dataSource.channelMin(i),
-                      yMax: dataSource.channelMax(i),
-                    );
-                  },
+          child: _dualMode
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Panneau gauche — signal brut
+                    Expanded(
+                      child: _ChannelPanel(
+                        label:        'Brut',
+                        labelColor:   Colors.blue.shade300,
+                        channelNames: channelNames,
+                        windowData:   windowData,
+                        channelMin:   channelMin,
+                        channelMax:   channelMax,
+                        signalColor:  Colors.blue,
+                      ),
+                    ),
+                    const VerticalDivider(width: 1, color: Colors.white12),
+                    // Panneau droit — signal nettoyé (sans mise en évidence)
+                    Expanded(
+                      child: _ChannelPanel(
+                        label:        'Nettoyé (ICA)',
+                        labelColor:   Colors.green.shade300,
+                        channelNames: channelNames,
+                        windowData:   cleanWindowData,
+                        channelMin:   channelMin,
+                        channelMax:   channelMax,
+                        signalColor:  Colors.green,
+                      ),
+                    ),
+                  ],
+                )
+              : _ChannelPanel(
+                  channelNames: channelNames,
+                  windowData:   windowData,
+                  channelMin:   channelMin,
+                  channelMax:   channelMax,
+                  signalColor:  Colors.blue,
                 ),
         ),
-        // ── Axe des abscisses (temps) ─────────────────────────────
+
+        // ── Légende ICA ───────────────────────────────────────────
+        if (_dualMode && icaRemoved.isNotEmpty)
+          _IcaLegend(removed: icaRemoved, labels: icaLabels),
+
+        // ── Axe temps ────────────────────────────────────────────
         Padding(
           padding: const EdgeInsets.only(left: 64, right: 16, bottom: 8),
           child: SizedBox(
@@ -643,45 +730,143 @@ class _SignalPreview extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────
-//  Barre de progression / scrubber global
+//  Panneau de canaux (réutilisé pour raw / clean)
+// ─────────────────────────────────────────────
+
+class _ChannelPanel extends StatelessWidget {
+  final String?            label;
+  final Color?             labelColor;
+  final List<String>       channelNames;
+  final List<List<double>> windowData;
+  final List<double>       channelMin;
+  final List<double>       channelMax;
+  final Color              signalColor;
+
+  const _ChannelPanel({
+    this.label,
+    this.labelColor,
+    required this.channelNames,
+    required this.windowData,
+    required this.channelMin,
+    required this.channelMax,
+    required this.signalColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (label != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 2),
+            child: Text(
+              label!,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: labelColor ?? Colors.grey,
+              ),
+            ),
+          ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: channelNames.length,
+            itemBuilder: (_, i) => _ChannelRow(
+              name:        channelNames[i],
+              data:        i < windowData.length ? windowData[i] : const [],
+              yMin:        i < channelMin.length ? channelMin[i] : null,
+              yMax:        i < channelMax.length ? channelMax[i] : null,
+              signalColor: signalColor,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+//  Légende ICA
+// ─────────────────────────────────────────────
+
+class _IcaLegend extends StatelessWidget {
+  final List<int>    removed;
+  final List<String> labels;
+  const _IcaLegend({required this.removed, required this.labels});
+
+  static const _labelColors = {
+    'eye blink':      Colors.orange,
+    'muscle artifact': Colors.red,
+    'heart beat':     Colors.pink,
+    'line noise':     Colors.yellow,
+    'channel noise':  Colors.purple,
+    'other':          Colors.grey,
+    'brain':          Colors.teal,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      color: const Color(0xFF0D1117),
+      child: Row(
+        children: [
+          Icon(Icons.psychology, size: 14, color: Colors.purple.shade300),
+          const SizedBox(width: 6),
+          Text(
+            'Retirées : ',
+            style: TextStyle(fontSize: 11, color: Colors.purple.shade200),
+          ),
+          Expanded(
+            child: Wrap(
+              spacing: 8,
+              children: List.generate(removed.length, (i) {
+                final lbl   = i < labels.length ? labels[i] : '?';
+                final color = _labelColors[lbl] ?? Colors.grey;
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.2),
+                    border: Border.all(color: color.withValues(alpha: 0.6)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'IC${removed[i]} · $lbl',
+                    style: TextStyle(fontSize: 10, color: color),
+                  ),
+                );
+              }),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────
+//  Scrubber de progression
 // ─────────────────────────────────────────────
 
 class _ProgressScrubber extends CustomPainter {
   final double progress;
-
   const _ProgressScrubber({required this.progress});
 
   @override
   void paint(Canvas canvas, Size size) {
-    final track = Paint()
-      ..color = Colors.white12
-      ..style = PaintingStyle.fill;
-    final fill = Paint()
-      ..color = Colors.teal.shade400
-      ..style = PaintingStyle.fill;
-    final indicator = Paint()
-      ..color = Colors.white70
-      ..style = PaintingStyle.fill;
-
-    final rrect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(0, 4, size.width, 8),
-      const Radius.circular(4),
-    );
-    canvas.drawRRect(rrect, track);
     canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(0, 4, size.width * progress, 8),
-        const Radius.circular(4),
-      ),
-      fill,
+      RRect.fromRectAndRadius(Rect.fromLTWH(0, 4, size.width, 8), const Radius.circular(4)),
+      Paint()..color = Colors.white12,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Rect.fromLTWH(0, 4, size.width * progress, 8), const Radius.circular(4)),
+      Paint()..color = Colors.teal.shade400,
     );
     final cx = size.width * progress;
     canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(cx - 3, 0, 6, 16),
-        const Radius.circular(3),
-      ),
-      indicator,
+      RRect.fromRectAndRadius(Rect.fromLTWH(cx - 3, 0, 6, 16), const Radius.circular(3)),
+      Paint()..color = Colors.white70,
     );
   }
 
@@ -696,7 +881,6 @@ class _ProgressScrubber extends CustomPainter {
 class _TimeAxis extends CustomPainter {
   final double tStart;
   final double tEnd;
-
   const _TimeAxis({required this.tStart, required this.tEnd});
 
   @override
@@ -704,19 +888,14 @@ class _TimeAxis extends CustomPainter {
     final duration = tEnd - tStart;
     if (duration <= 0) return;
 
-    final textStyle = const TextStyle(color: Colors.grey, fontSize: 10);
-    final tickPaint = Paint()
-      ..color = Colors.white24
-      ..strokeWidth = 1;
+    const textStyle = TextStyle(color: Colors.grey, fontSize: 10);
+    final tickPaint = Paint()..color = Colors.white24..strokeWidth = 1;
 
-    final double rawStep = duration / 5;
-    final double step    = _niceStep(rawStep);
-
+    final step = _niceStep(duration / 5);
     double t = (tStart / step).ceil() * step;
     while (t <= tEnd) {
       final x = (t - tStart) / duration * size.width;
       canvas.drawLine(Offset(x, 0), Offset(x, 4), tickPaint);
-
       final label = t >= 60
           ? '${(t / 60).floor()}m${(t % 60).toStringAsFixed(0)}s'
           : '${t.toStringAsFixed(t < 10 ? 1 : 0)}s';
@@ -730,8 +909,9 @@ class _TimeAxis extends CustomPainter {
   }
 
   double _niceStep(double raw) {
-    const steps = [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0];
-    for (final s in steps) { if (raw <= s) return s; }
+    for (final s in [0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0]) {
+      if (raw <= s) return s;
+    }
     return 60.0;
   }
 
@@ -739,190 +919,44 @@ class _TimeAxis extends CustomPainter {
   bool shouldRepaint(_TimeAxis old) => old.tStart != tStart || old.tEnd != tEnd;
 }
 
+// ─────────────────────────────────────────────
+//  Ligne de canal
+// ─────────────────────────────────────────────
+
 class _ChannelRow extends StatelessWidget {
   final String       name;
   final List<double> data;
   final double?      yMin;
   final double?      yMax;
+  final Color        signalColor;
 
-  const _ChannelRow({required this.name, required this.data, this.yMin, this.yMax});
+  const _ChannelRow({
+    required this.name,
+    required this.data,
+    required this.signalColor,
+    this.yMin,
+    this.yMax,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Row(
         children: [
           SizedBox(
             width: 48,
-            child: Text(name,
-              style: const TextStyle(fontSize: 11, color: Colors.grey)),
+            child: Text(name, style: const TextStyle(fontSize: 11, color: Colors.grey)),
           ),
           Expanded(
             child: SizedBox(
               height: 40,
-              child: CustomPaint(painter: _MiniPlot(data: data, yMin: yMin, yMax: yMax)),
+              child: CustomPaint(
+                painter: _MiniPlot(data: data, yMin: yMin, yMax: yMax, color: signalColor),
+              ),
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────
-//  Vue des composantes ICA
-// ─────────────────────────────────────────────
-
-class _ComponentsView extends StatelessWidget {
-  final ICAResult        ica;
-  final Set<int>         artifacts;
-  final void Function(int) onToggle;
-  final VoidCallback       onReconstruct;
-
-  const _ComponentsView({
-    required this.ica,
-    required this.artifacts,
-    required this.onToggle,
-    required this.onReconstruct,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              Text(
-                '${ica.nComponents} composantes indépendantes',
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-              ),
-              const Spacer(),
-              if (artifacts.isNotEmpty)
-                FilledButton.icon(
-                  onPressed: onReconstruct,
-                  icon: const Icon(Icons.auto_fix_high, size: 16),
-                  label: Text('Reconstruire sans ${artifacts.length} IC'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Colors.green.shade700,
-                  ),
-                ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: ListView.builder(
-            itemCount: ica.nComponents,
-            itemBuilder: (_, i) => _ComponentCard(
-              index:      i,
-              data:       ica.components[i],
-              isArtifact: artifacts.contains(i),
-              onToggle:   () => onToggle(i),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// ─────────────────────────────────────────────
-//  Carte d'une composante ICA
-// ─────────────────────────────────────────────
-
-class _ComponentCard extends StatelessWidget {
-  final int          index;
-  final List<double> data;
-  final bool         isArtifact;
-  final VoidCallback onToggle;
-
-  const _ComponentCard({
-    required this.index,
-    required this.data,
-    required this.isArtifact,
-    required this.onToggle,
-  });
-
-  double get kurtosis {
-    final n = data.length;
-    if (n < 4) return 0;
-    final mean = data.reduce((a, b) => a + b) / n;
-    double s2 = 0, s4 = 0;
-    for (final x in data) {
-      final d = x - mean;
-      s2 += d * d;
-      s4 += d * d * d * d;
-    }
-    final v = s2 / n;
-    return v > 1e-10 ? (s4 / n) / (v * v) - 3.0 : 0.0;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final kurt    = kurtosis;
-    final suspect = kurt.abs() > 2.0;
-
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      color: isArtifact ? Colors.red.shade900.withOpacity(0.3) : null,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: BorderSide(
-          color: isArtifact
-              ? Colors.red.shade400
-              : suspect
-                  ? Colors.orange.shade400
-                  : Colors.green.shade700,
-          width: 1.5,
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(10),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 100,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('IC${index + 1}',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                  const SizedBox(height: 2),
-                  Text('kurt: ${kurt.toStringAsFixed(2)}',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: suspect ? Colors.orange : Colors.grey,
-                    )),
-                ],
-              ),
-            ),
-            Expanded(
-              child: SizedBox(
-                height: 50,
-                child: CustomPaint(
-                  painter: _MiniPlot(
-                    data:  data,
-                    color: isArtifact
-                        ? Colors.red.shade300
-                        : suspect
-                            ? Colors.orange
-                            : Colors.blue.shade300,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            TextButton(
-              onPressed: onToggle,
-              style: TextButton.styleFrom(
-                foregroundColor: isArtifact ? Colors.red : Colors.grey,
-              ),
-              child: Text(isArtifact ? 'Démarquer' : 'Artefact'),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -934,13 +968,13 @@ class _ComponentCard extends StatelessWidget {
 
 class _MiniPlot extends CustomPainter {
   final List<double> data;
-  final Color        color;
   final double?      yMin;
   final double?      yMax;
+  final Color        color;
 
   const _MiniPlot({
     required this.data,
-    this.color = Colors.blue,
+    required this.color,
     this.yMin,
     this.yMax,
   });
@@ -962,19 +996,15 @@ class _MiniPlot extends CustomPainter {
     final range = maxV - minV;
     if (range < 1e-10) return;
 
-    final paint = Paint()
-      ..color       = color
-      ..strokeWidth = 1.0
-      ..style       = PaintingStyle.stroke;
-
+    // ── Tracé du signal ──────────────────────────────────────────
+    final paint = Paint()..color = color..strokeWidth = 1.0..style = PaintingStyle.stroke;
     final path  = Path();
     bool  first = true;
 
     for (int i = 0; i < data.length; i += step) {
       final x = i / data.length * size.width;
       final y = size.height - (data[i] - minV) / range * size.height;
-      if (first) { path.moveTo(x, y); first = false; }
-      else        path.lineTo(x, y);
+      if (first) { path.moveTo(x, y); first = false; } else { path.lineTo(x, y); }
     }
 
     canvas.drawPath(path, paint);
@@ -982,5 +1012,87 @@ class _MiniPlot extends CustomPainter {
 
   @override
   bool shouldRepaint(_MiniPlot old) =>
-      old.data != data || old.color != color || old.yMin != yMin || old.yMax != yMax;
+      old.data != data || old.yMin != yMin || old.yMax != yMax || old.color != color;
+}
+
+// ─────────────────────────────────────────────
+//  Barre de preprocessing
+// ─────────────────────────────────────────────
+
+class _PreprocessingBar extends StatelessWidget {
+  final bool   notchEnabled;
+  final double notchFreq;
+  final bool   lowpassEnabled;
+  final double lowpassCutoff;
+  final void Function(bool)   onNotchToggle;
+  final void Function(double) onNotchFreq;
+  final void Function(bool)   onLowpassToggle;
+  final void Function(double) onLowpassCutoff;
+
+  const _PreprocessingBar({
+    required this.notchEnabled,
+    required this.notchFreq,
+    required this.lowpassEnabled,
+    required this.lowpassCutoff,
+    required this.onNotchToggle,
+    required this.onNotchFreq,
+    required this.onLowpassToggle,
+    required this.onLowpassCutoff,
+  });
+
+  static const _notchFreqs     = [50.0, 60.0];
+  static const _lowpassCutoffs = [10.0, 20.0, 30.0, 40.0, 50.0, 70.0, 100.0];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      color: const Color(0xFF151B2A),
+      child: Row(
+        children: [
+          const Text('Preprocessing', style: TextStyle(fontSize: 11, color: Colors.grey)),
+          const SizedBox(width: 16),
+          FilterChip(
+            label: const Text('Notch'),
+            selected: notchEnabled,
+            onSelected: onNotchToggle,
+            selectedColor: Colors.teal.shade800,
+            labelStyle: TextStyle(fontSize: 11, color: notchEnabled ? Colors.white : Colors.grey),
+          ),
+          if (notchEnabled) ...[
+            const SizedBox(width: 6),
+            DropdownButton<double>(
+              value: notchFreq,
+              underline: const SizedBox(),
+              isDense: true,
+              style: const TextStyle(fontSize: 11, color: Colors.white70),
+              dropdownColor: const Color(0xFF1C2130),
+              items: _notchFreqs.map((f) => DropdownMenuItem(value: f, child: Text('${f.toInt()} Hz'))).toList(),
+              onChanged: (v) { if (v != null) onNotchFreq(v); },
+            ),
+          ],
+          const SizedBox(width: 16),
+          FilterChip(
+            label: const Text('Low-pass'),
+            selected: lowpassEnabled,
+            onSelected: onLowpassToggle,
+            selectedColor: Colors.indigo.shade700,
+            labelStyle: TextStyle(fontSize: 11, color: lowpassEnabled ? Colors.white : Colors.grey),
+          ),
+          if (lowpassEnabled) ...[
+            const SizedBox(width: 6),
+            DropdownButton<double>(
+              value: lowpassCutoff,
+              underline: const SizedBox(),
+              isDense: true,
+              style: const TextStyle(fontSize: 11, color: Colors.white70),
+              dropdownColor: const Color(0xFF1C2130),
+              items: _lowpassCutoffs.map((f) => DropdownMenuItem(value: f, child: Text('${f.toInt()} Hz'))).toList(),
+              onChanged: (v) { if (v != null) onLowpassCutoff(v); },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }
