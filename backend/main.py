@@ -9,6 +9,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import scipy.linalg
 import mne
 from mne.preprocessing import ICA
 from mne_icalabel import label_components
@@ -42,6 +43,7 @@ app.add_middleware(
 _raw:             mne.io.BaseRaw | None = None   # EDF online (lazy)
 _data:            np.ndarray | None     = None   # données brutes (offline)
 _data_filtered:   np.ndarray | None     = None   # données filtrées (offline)
+_data_direct:     np.ndarray | None     = None   # après méthode directe (eye blink)
 _data_clean:      np.ndarray | None     = None   # données nettoyées par ICA (offline)
 _ica_labels:      list[str]             = []     # labels des composantes retirées
 _ica_removed:     list[int]             = []     # indices des composantes retirées
@@ -52,6 +54,7 @@ _channel_min:     list[float]           = []
 _channel_max:     list[float]           = []
 _n_samples:       int                   = 0
 _mode:            str                   = ""     # "online" | "offline"
+_orica_global:    "ORICAProcessor | None" = None  # référence pour /clean
 
 WINDOW_SEC     = 4.0
 FRAME_INTERVAL = 0.1
@@ -70,8 +73,11 @@ def apply_filters(
     notch_freq: float,
     lowpass_enabled: bool,
     lowpass_cutoff: float,
+    fft_enabled: bool = False,
+    fft_low: float = 1.0,
+    fft_high: float = 40.0,
 ) -> np.ndarray:
-    """Applique notch et/ou low-pass à data (n_channels, n_samples)."""
+    """Apply notch, low-pass and/or FFT bandpass filter to data (n_channels, n_samples)."""
     min_samples = 20
     if data.shape[1] < min_samples:
         return data
@@ -88,10 +94,41 @@ def apply_filters(
         for i in range(out.shape[0]):
             out[i] = filtfilt(b, a, out[i])
 
+    if fft_enabled:
+        from scipy.fft import rfft, irfft, rfftfreq
+        n     = out.shape[1]
+        freqs = rfftfreq(n, d=1.0 / sr)
+        spec  = rfft(out, axis=1)
+        mask  = (freqs < fft_low) | (freqs > fft_high)
+        spec[:, mask] = 0.0
+        out = irfft(spec, n=n, axis=1)
+
     return out
 
 
 # ── ICA ───────────────────────────────────────────────────────────────────────
+
+def _normalize_channel_name(ch: str, montage_lookup: dict[str, str]) -> str:
+    """Try several naming conventions to find a match in the montage lookup."""
+    candidates = [ch]
+    # Strip trailing dots (PhysioNet: "Fp1.")
+    stripped = ch.rstrip(".")
+    candidates.append(stripped)
+    # TUAR format: "EEG Fp1-REF", "EEG Fp1-LE", "EEG Fp1-AVG"
+    for prefix in ("EEG ", "eeg "):
+        if stripped.upper().startswith(prefix.upper()):
+            core = stripped[len(prefix):]
+            for suffix in ("-REF", "-LE", "-AVG", "-ref", "-le", "-avg"):
+                if core.upper().endswith(suffix.upper()):
+                    candidates.append(core[: -len(suffix)])
+                    break
+            candidates.append(core)
+    for candidate in candidates:
+        found = montage_lookup.get(candidate.lower())
+        if found:
+            return found
+    return stripped
+
 
 def _get_positioned_channels(
     data: np.ndarray,
@@ -110,8 +147,7 @@ def _get_positioned_channels(
     montage_lookup = {ch.lower(): ch for ch in montage.ch_names}
     clean_names    = {}
     for ch in channel_names:
-        stripped = ch.rstrip(".")
-        clean_names[ch] = montage_lookup.get(stripped.lower(), stripped)
+        clean_names[ch] = _normalize_channel_name(ch, montage_lookup)
 
     clean_to_orig = {v: i for i, v in enumerate(clean_names.values())}
 
@@ -159,8 +195,7 @@ def compute_ica_offline(
     montage_lookup = {ch.lower(): ch for ch in montage.ch_names}
     clean_names = {}
     for ch in channel_names:
-        stripped = ch.rstrip(".")
-        clean_names[ch] = montage_lookup.get(stripped.lower(), stripped)
+        clean_names[ch] = _normalize_channel_name(ch, montage_lookup)
 
     info = mne.create_info(
         ch_names=[clean_names[c] for c in channel_names],
@@ -209,81 +244,314 @@ def compute_ica_offline(
     return result, exclude, [labels[i] for i in exclude]
 
 
+# ── Eye blink removal — Zhang et al. (2017) ───────────────────────────────────
+
+def _fp1_channel_idx(channel_names: list[str]) -> int | None:
+    """Return index of Fp1 (or Fp2 / Fpz). Handles TUAR 'EEG Fp1-REF' style."""
+    for target in ("fp1", "fp2", "fpz"):
+        for i, ch in enumerate(channel_names):
+            norm = (ch.lower()
+                    .replace("eeg ", "").rstrip(".")
+                    .replace("-ref", "").replace("-le", "").replace("-avg", "")
+                    .strip())
+            if norm == target:
+                return i
+    return None
+
+
+def _argextrema(sig: np.ndarray, a: int, b: int, kind: str) -> int:
+    a = max(0, a); b = min(len(sig) - 1, b)
+    if a > b:
+        return a
+    fn = np.argmin if kind == "min" else np.argmax
+    return a + int(fn(sig[a:b + 1]))
+
+
+def _arg_nearest_zero(sig: np.ndarray, a: int, b: int) -> int:
+    a = max(0, a); b = min(len(sig) - 1, b)
+    if a > b:
+        return a
+    return a + int(np.argmin(np.abs(sig[a:b + 1])))
+
+
+def _lstsq_line(sig: np.ndarray, p0: int, p1: int) -> tuple[float, float]:
+    """
+    Fit a line to sig over the inner 10–90 % of [p0, p1].
+    Returns (slope, intercept) in global sample-index coordinates.
+    """
+    L  = max(1, p1 - p0)
+    i0 = min(len(sig) - 1, p0 + max(1, int(0.10 * L)))
+    i1 = min(len(sig) - 1, p0 + min(L - 1, int(0.90 * L)))
+    i1 = max(i0, i1)
+    x  = np.arange(i0, i1 + 1, dtype=np.float64)
+    y  = sig[i0:i1 + 1].astype(np.float64)
+    if len(x) < 2:
+        m = (float(sig[min(p1, len(sig)-1)]) - float(sig[p0])) / L
+        return m, float(sig[p0]) - m * p0
+    xm, ym = x.mean(), y.mean()
+    ss = float(np.sum((x - xm) ** 2))
+    if ss < 1e-30:
+        return 0.0, ym
+    m = float(np.dot(x - xm, y - ym) / ss)
+    return m, ym - m * xm
+
+
+def _build_zhang_template(fp1: np.ndarray, kpts: list[int]) -> np.ndarray:
+    """
+    Piecewise linear template between key points (Z1, I1, I2, Z2, ...).
+    Each segment: line fitted on the inner 10–90 % of the real signal.
+    Adjacent lines are extrapolated to their intersection (breakpoint).
+    Intersection zones are 3-point smoothed (midpoint outward) — §2.4.4.
+    Returns array of length kpts[-1] - kpts[0].
+    """
+    t0 = kpts[0]
+    T  = kpts[-1] - t0
+    if T <= 0 or len(kpts) < 2:
+        return np.zeros(max(0, T))
+
+    lines: list[tuple[float, float]] = [
+        _lstsq_line(fp1, kpts[j], kpts[j + 1])
+        for j in range(len(kpts) - 1)
+    ]
+
+    # Breakpoints: intersection of each consecutive pair of lines
+    bkpts = [kpts[0]]
+    for j in range(len(lines) - 1):
+        m1, b1 = lines[j];  m2, b2 = lines[j + 1]
+        dm = m1 - m2
+        if abs(dm) > 1e-15:
+            tc = float(np.clip((b2 - b1) / dm, kpts[j], kpts[j + 2]))
+        else:
+            tc = float(kpts[j + 1])
+        bkpts.append(int(round(tc)))
+    bkpts.append(kpts[-1])
+
+    tmpl = np.zeros(T)
+    for j, (m, b) in enumerate(lines):
+        s = max(t0, bkpts[j])
+        e = min(t0 + T - 1, bkpts[j + 1])
+        for t_g in range(s, e + 1):
+            tl = t_g - t0
+            if 0 <= tl < T:
+                tmpl[tl] = m * t_g + b
+
+    # 3-point smoothing from midpoint of first segment to midpoint of second
+    for j, bp in enumerate(bkpts[1:-1]):
+        bpl = bp - t0
+        hw  = min((bp - bkpts[j]) // 2, (bkpts[j + 2] - bp) // 2)
+        for step in range(hw):
+            for tl in (bpl - step, bpl + step):
+                if 1 <= tl < T - 1:
+                    tmpl[tl] = (tmpl[tl - 1] + tmpl[tl] + tmpl[tl + 1]) / 3.0
+
+    return tmpl
+
+
+def detect_and_remove_eyeblinks_zhang2017(
+    data: np.ndarray,
+    channel_names: list[str],
+    sr: float,
+) -> tuple[np.ndarray, int, list[float]]:
+    """
+    Zhang et al. (2017) — single-channel physiology-based eye blink removal.
+
+    1. Detect blinks via upward threshold crossings in Fp1.
+    2. Per blink: locate inflection points I1–I4 and zero points Z1–Z4.
+    3. Build a piecewise linear template (§2.4.4).
+    4. Scale template to each channel by least squares (Gratton 1998) and subtract.
+
+    Returns
+    -------
+    clean  : corrected data array (same shape as `data`)
+    n      : number of blinks removed
+    times  : blink peak times in seconds
+    """
+    fp1_idx = _fp1_channel_idx(channel_names)
+    if fp1_idx is None:
+        return data.copy(), 0, []
+
+    fp1 = data[fp1_idx].astype(np.float64)
+    n   = len(fp1)
+
+    def ms(v_ms: float) -> int:
+        return max(1, int(round(v_ms * sr / 1000.0)))
+
+    # ── Detection threshold ──────────────────────────────────────────────────
+    pos_vals = fp1[fp1 > 0]
+    if len(pos_vals) < 10:
+        return data.copy(), 0, []
+    peak_ref   = np.percentile(pos_vals, 99)
+    thresh_low = 0.25 * peak_ref   # 25–100 % window (§2.4)
+
+    # ── Find upward threshold crossings → Start points S ────────────────────
+    blink_starts: list[int] = []
+    i = 0
+    while i < n - 1:
+        if fp1[i] < thresh_low <= fp1[i + 1]:
+            blink_starts.append(i + 1)
+            i += ms(200)   # minimum 200 ms between detections
+        else:
+            i += 1
+
+    if not blink_starts:
+        return data.copy(), 0, []
+
+    result      = data.astype(np.float64).copy()
+    blink_times: list[float] = []
+    n_removed   = 0
+    done_regions: list[tuple[int, int]] = []
+
+    for S in blink_starts:
+        # ── Inflection points ────────────────────────────────────────────────
+        I2 = _argextrema(fp1, S, min(n - 1, S + ms(500)), "max")
+        if fp1[I2] < thresh_low:
+            continue
+        I1 = _argextrema(fp1, max(0, S - ms(500)), S, "min")
+
+        # I3: MIN, at least 12 samples (at 128 Hz) after I2
+        i3_gap = max(ms(80), int(round(12 * sr / 128)))
+        I3c    = _argextrema(fp1, I2 + i3_gap, min(n - 1, I2 + ms(500)), "min")
+        has_I3 = (I3c > I2) and (fp1[I3c] < fp1[I2] * 0.5)
+        I3     = I3c if has_I3 else None
+
+        # I4: MAX, at least 13 samples after I3
+        has_I4 = False; I4 = None
+        if has_I3:
+            i4_gap = max(ms(80), int(round(13 * sr / 128)))
+            I4c    = _argextrema(fp1, I3 + i4_gap, min(n - 1, I3 + ms(500)), "max")
+            has_I4 = (I4c > I3) and (fp1[I4c] > fp1[I3])
+            I4     = I4c if has_I4 else None
+
+        # ── Zero (baseline) points ───────────────────────────────────────────
+        Z1 = _arg_nearest_zero(fp1, max(0, I1 - ms(500)), I1)
+        gap12 = int(round(12 * sr / 128))
+        gap14 = int(round(14 * sr / 128))
+
+        if has_I3:
+            Z2 = _arg_nearest_zero(fp1, I2 + gap12, I3)
+        else:
+            Z2 = _arg_nearest_zero(fp1, I2 + gap12, min(n - 1, I2 + ms(500)))
+
+        if has_I3 and has_I4:
+            Z3 = _arg_nearest_zero(fp1, I3 + gap14, I4)
+            Z4 = _arg_nearest_zero(fp1, I4 + gap14, min(n - 1, I4 + ms(390)))
+        elif has_I3:
+            Z3 = _arg_nearest_zero(fp1, I3 + gap14, min(n - 1, I3 + ms(390)))
+            Z4 = Z3
+        else:
+            Z3 = Z4 = Z2
+
+        # ── Key points (temporal order, no duplicates) ───────────────────────
+        kpts_raw = [Z1, I1, I2, Z2]
+        if has_I3: kpts_raw += [I3, Z3]
+        if has_I4: kpts_raw += [I4, Z4]
+        kpts = sorted(set(kpts_raw))
+        if len(kpts) < 2:
+            continue
+
+        # ── Template extent: L0 (−625 ms) … L8 (+625 ms) ────────────────────
+        t_start = max(0, kpts[0] - ms(625))
+        t_end   = min(n, kpts[-1] + ms(625))
+        if (t_end - t_start) < ms(100):
+            continue
+
+        # Skip if this region overlaps a blink already removed
+        if any(t_start < re and t_end > rs for rs, re in done_regions):
+            continue
+
+        # ── Build template ───────────────────────────────────────────────────
+        tmpl_core = _build_zhang_template(fp1, kpts)
+        T_seg     = t_end - t_start
+        tmpl      = np.zeros(T_seg)
+        offset    = kpts[0] - t_start
+        core_end  = min(T_seg, offset + len(tmpl_core))
+        tmpl[offset:core_end] = tmpl_core[:core_end - offset]
+
+        # ── Subtract scaled template from every channel ──────────────────────
+        denom = float(np.dot(tmpl, tmpl))
+        if denom < 1e-30:
+            continue
+
+        for ch_i in range(result.shape[0]):
+            ch_seg = result[ch_i, t_start:t_end]
+            slope  = float(np.dot(tmpl, ch_seg)) / denom
+            result[ch_i, t_start:t_end] -= slope * tmpl
+
+        blink_times.append(float(I2) / sr)
+        done_regions.append((t_start, t_end))
+        n_removed += 1
+
+    return result, n_removed, blink_times
+
+
 class ORICAProcessor:
     """
-    Online Recursive ICA (ORICA) pour le mode streaming.
-
-    Initialisation : PCA whitening ajusté sur un buffer de 10 s.
-    Les composantes à exclure sont déterminées une fois via ICLabel sur ce buffer.
-    Chaque appel à process() met à jour W (gradient naturel) et reconstruit
-    le signal sans les composantes artefact.
-
-    Référence : Hsu et al. (2012) "Real-time adaptive EEG source separation
-    using online recursive independent component analysis."
+    Online Recursive ICA (ORICA) — Hsu et al. (2012).
+    Blanchiment fixe via sqrtm(cov). Mise à jour de W par gradient naturel
+    avec facteur d'oubli cooling. Orthogonalisation après chaque bloc.
+    Retourne les activations IC Y = W · sphere · X, fenêtre par fenêtre.
     """
 
     def __init__(
         self,
         X_init_pos: np.ndarray,   # (n_positioned, n_samples) — buffer initial
-        n_components: int,
-        exclude: list[int],
-        labels: list[str],
         orig_indices: list[int],  # indices dans le signal complet
-        lr: float = 0.005,
+        lambda_0: float = 0.995,
+        gamma: float = 0.6,
+        block_size: int = 8,
     ):
-        from sklearn.decomposition import PCA
-
-        self.exclude      = set(exclude)
-        self.labels       = labels
         self.orig_indices = np.asarray(orig_indices)
-        self.n_comp       = n_components
-        self.lr           = lr
-        self.t            = 0
+        self.lambda_0     = lambda_0
+        self.gamma        = gamma
+        self.block_size   = block_size
+        self.t            = 1
+        self.n_comp       = X_init_pos.shape[0]
 
-        # Ajuster PCA sur le buffer initial (whitening)
-        self._pca = PCA(n_components=n_components, whiten=True)
-        self._pca.fit(X_init_pos.T)  # fit attend (n_samples, n_features)
+        cov = np.cov(X_init_pos)
+        sqrtm_cov   = scipy.linalg.sqrtm(cov).real
+        self.sphere = 2.0 * np.linalg.inv(sqrtm_cov)
+        self.W      = np.eye(self.n_comp, dtype=np.float64)
 
-        # W initialisé à l'identité — convergera vers FastICA en ligne
-        self.W = np.eye(n_components, dtype=np.float64)
+    def _cooling_ff(self, t_range: np.ndarray) -> np.ndarray:
+        return self.lambda_0 / np.power(t_range, self.gamma)
 
     def process(self, X_full: np.ndarray) -> np.ndarray:
         """
-        X_full : (n_channels_total, n_samples)
-        Retourne un signal de même forme avec les composantes artefact supprimées.
+        Met à jour W et retourne les activations IC Y = W·sphere·X_pos.
+        Shape retournée : (n_comp, n_samples).
         """
-        n_samp = X_full.shape[1]
+        X_pos   = X_full[self.orig_indices, :]
+        X_white = self.sphere @ X_pos
 
-        # Extraire les canaux positionnés
-        X_pos = X_full[self.orig_indices, :]                    # (n_pos, n_samp)
+        _, n_samp = X_white.shape
+        n_blocks  = max(1, n_samp // self.block_size)
 
-        # Blanchiment PCA
-        X_white = self._pca.transform(X_pos.T).T               # (n_comp, n_samp)
+        for bi in range(n_blocks):
+            start = bi * n_samp // n_blocks
+            end   = min(n_samp, (bi + 1) * n_samp // n_blocks)
+            block = X_white[:, start:end]
+            n_blk = block.shape[1]
 
-        # Mise à jour ORICA — gradient naturel
-        Y = self.W @ X_white                                    # (n_comp, n_samp)
-        f_Y = np.tanh(Y)
-        lr_t = self.lr / (1.0 + self.t / 100_000.0)
-        self.W += lr_t * (np.eye(self.n_comp) - (f_Y @ Y.T) / n_samp) @ self.W
-        self.t += n_samp
+            t_range = np.arange(self.t, self.t + n_blk, dtype=float)
+            lam     = self._cooling_ff(t_range)
 
-        # Mettre à zéro les composantes artefact
-        Y_clean = Y.copy()
-        for i in self.exclude:
-            if i < Y_clean.shape[0]:
-                Y_clean[i] = 0.0
+            Y = self.W @ block
+            f = -2.0 * np.tanh(Y)
 
-        # Reconstruction : W⁻¹ @ Y_clean → espace capteurs → dé-blanchiment
-        W_inv = np.linalg.pinv(self.W)
-        X_clean_pos = self._pca.inverse_transform(
-            (W_inv @ Y_clean).T
-        ).T                                                      # (n_pos, n_samp)
+            fy_dot      = np.einsum("it,it->t", f, Y)
+            q           = 1.0 + lam * (fy_dot - 1.0)
+            lambda_prod = np.prod(1.0 / (1.0 - lam))
+            correction  = (Y * (lam / q)) @ f.T
+            self.W      = lambda_prod * (self.W - correction @ self.W)
 
-        # Injecter dans le signal complet
-        result = X_full.copy()
-        result[self.orig_indices, :] = X_clean_pos
+            D_val, V_val = np.linalg.eig(self.W @ self.W.T)
+            D_val        = np.abs(D_val.real)
+            D_isqrt      = np.diag(1.0 / np.sqrt(D_val + 1e-12))
+            self.W       = V_val.real @ D_isqrt @ V_val.real.T @ self.W
 
-        return result
+            self.t += n_blk
+
+        return self.W @ X_white  # (n_comp, n_samp)
 
 
 def _init_orica(
@@ -293,26 +561,23 @@ def _init_orica(
     n_components: int,
 ) -> "ORICAProcessor":
     """
-    Lit un buffer de 10 s depuis `raw`, lance ICLabel pour obtenir les labels,
-    et retourne un ORICAProcessor initialisé.
+    Initialise ORICA avec W = identité — pas de bootstrap FastICA.
+    W convergera progressivement via les fenêtres du streaming.
+    ICLabel sera lancé pour la première fois à la 50ème fenêtre (~5s).
     Tourne dans run_in_executor (non-bloquant).
     """
-    buf_samples = min(int(sr * 10), int(raw.n_times))
-    X_buf = raw.get_data(start=0, stop=buf_samples)
+    # Lire juste quelques samples pour obtenir les indices de canaux positionnés
+    probe_samples = min(int(sr * 2), int(raw.n_times))
+    X_probe = raw.get_data(start=0, stop=probe_samples)
 
-    # Lancer ICLabel sur le buffer pour identifier les composantes artefact
-    _, exclude, labels = compute_ica_offline(X_buf, channel_names, sr, n_components)
-
-    # Obtenir les indices de canaux positionnés (même logique que compute_ica_offline)
-    _, orig_indices, _ = _get_positioned_channels(X_buf, channel_names, sr)
+    _, orig_indices, _ = _get_positioned_channels(X_probe, channel_names, sr)
 
     if not orig_indices:
         raise ValueError("Aucun canal positionné trouvé pour ORICA.")
 
-    n_comp = min(n_components, len(orig_indices) - 1)
-    X_init_pos = X_buf[orig_indices, :]
+    X_init_pos = X_probe[np.asarray(orig_indices), :]
 
-    return ORICAProcessor(X_init_pos, n_comp, exclude, labels, orig_indices)
+    return ORICAProcessor(X_init_pos, orig_indices=orig_indices)
 
 
 def _cleanup_tmp():
@@ -368,7 +633,8 @@ async def upload_file(
             _raw = None
         _cleanup_tmp()
 
-        # Réinitialise l'état ICA à chaque nouveau fichier
+        # Réinitialise l'état à chaque nouveau fichier
+        _data_direct = None
         _data_clean  = None
         _ica_labels  = []
         _ica_removed = []
@@ -447,6 +713,10 @@ async def upload_file(
         return {"status": "error", "message": str(e)}
 
 
+# ── Clean signal export ───────────────────────────────────────────────────────
+
+
+
 # ── Stream WebSocket ──────────────────────────────────────────────────────────
 
 @app.websocket("/ws")
@@ -480,13 +750,19 @@ async def websocket_endpoint(websocket: WebSocket):
     notch_freq      = 50.0
     lowpass_enabled = False
     lowpass_cutoff  = 40.0
+    fft_enabled     = False
+    fft_low         = 1.0
+    fft_high        = 40.0
     ica_enabled     = False
-    orica: ORICAProcessor | None = None   # actif en mode online uniquement
+    orica: ORICAProcessor | None = None
+    _ica_removed    = []
+    _ica_labels     = []
 
     async def receive_commands():
         nonlocal paused, pos, window_size, ica_enabled, orica
         nonlocal notch_enabled, notch_freq, lowpass_enabled, lowpass_cutoff
-        global _data_filtered, _data_clean, _ica_labels, _ica_removed
+        nonlocal fft_enabled, fft_low, fft_high
+        global _data_filtered, _data_direct, _data_clean, _ica_labels, _ica_removed
         try:
             async for raw_msg in websocket.iter_text():
                 cmd = json.loads(raw_msg)
@@ -512,13 +788,18 @@ async def websocket_endpoint(websocket: WebSocket):
                     notch_freq      = float(cmd.get("notch_freq",     50.0))
                     lowpass_enabled = bool(cmd.get("lowpass_enabled", False))
                     lowpass_cutoff  = float(cmd.get("lowpass_cutoff", 40.0))
+                    fft_enabled     = bool(cmd.get("fft_enabled",     False))
+                    fft_low         = float(cmd.get("fft_low",        1.0))
+                    fft_high        = float(cmd.get("fft_high",       40.0))
                     if _mode == "offline" and _data is not None:
                         _data_filtered = apply_filters(
                             _data, _sampling_rate,
                             notch_enabled, notch_freq,
                             lowpass_enabled, lowpass_cutoff,
+                            fft_enabled, fft_low, fft_high,
                         )
-                        # Si ICA déjà calculée, la recalculer sur les données re-filtrées
+                        # Réinitialise méthode directe et ICA si les filtres changent
+                        _data_direct = None
                         if ica_enabled:
                             _data_clean  = None
                             _ica_labels  = []
@@ -536,7 +817,8 @@ async def websocket_endpoint(websocket: WebSocket):
                             "status": "computing",
                         }))
                         try:
-                            src  = _data_filtered
+                            # ICA s'applique sur la sortie de la méthode directe si disponible
+                            src  = _data_direct if _data_direct is not None else _data_filtered
                             loop = asyncio.get_event_loop()
                             result = await loop.run_in_executor(
                                 None,
@@ -559,29 +841,26 @@ async def websocket_endpoint(websocket: WebSocket):
                             }))
 
                     elif enabled and _mode == "online" and _raw is not None:
-                        # ── Mode online : initialiser ORICA via ICLabel sur 10 s ──
                         await websocket.send_text(json.dumps({
                             "type":   "ica_status",
                             "status": "computing",
                         }))
                         try:
-                            loop = asyncio.get_event_loop()
+                            loop  = asyncio.get_event_loop()
                             orica = await loop.run_in_executor(
-                                None,
-                                _init_orica,
+                                None, _init_orica,
                                 _raw, _channel_names, _sampling_rate, n_comp,
                             )
-                            _ica_removed = sorted(orica.exclude)
-                            _ica_labels  = orica.labels
+                            global _orica_global
+                            _orica_global = orica
                             await websocket.send_text(json.dumps({
-                                "type":               "ica_status",
-                                "status":             "done",
-                                "removed_components": _ica_removed,
-                                "labels":             _ica_labels,
+                                "type":   "ica_status",
+                                "status": "ready",
+                                "n_comp": orica.n_comp,
                             }))
                         except Exception as e:
                             ica_enabled = False
-                            orica = None
+                            orica       = None
                             await websocket.send_text(json.dumps({
                                 "type":    "ica_status",
                                 "status":  "error",
@@ -590,6 +869,49 @@ async def websocket_endpoint(websocket: WebSocket):
 
                     elif not enabled:
                         orica        = None
+                        _data_clean  = None
+                        _ica_labels  = []
+                        _ica_removed = []
+
+                elif t == "set_direct_method" and _mode == "offline":
+                    method  = cmd.get("method", "eyeblink")
+                    enabled = bool(cmd.get("enabled", False))
+
+                    if enabled and method == "eyeblink" and _data_filtered is not None:
+                        await websocket.send_text(json.dumps({
+                            "type":   "direct_method_status",
+                            "status": "computing",
+                            "method": method,
+                        }))
+                        try:
+                            loop = asyncio.get_event_loop()
+                            clean, n_blinks, times = await loop.run_in_executor(
+                                None,
+                                detect_and_remove_eyeblinks_zhang2017,
+                                _data_filtered, _channel_names, _sampling_rate,
+                            )
+                            _data_direct = clean
+                            # Si ICA déjà calculée, l'invalider (elle doit tourner sur le nouveau signal)
+                            _data_clean  = None
+                            _ica_labels  = []
+                            _ica_removed = []
+                            await websocket.send_text(json.dumps({
+                                "type":          "direct_method_status",
+                                "status":        "done",
+                                "method":        method,
+                                "effective":     n_blinks > 0,
+                                "n_blinks":      n_blinks,
+                                "blink_times_s": times,
+                            }))
+                        except Exception as e:
+                            await websocket.send_text(json.dumps({
+                                "type":    "direct_method_status",
+                                "status":  "error",
+                                "method":  method,
+                                "message": str(e),
+                            }))
+                    elif not enabled:
+                        _data_direct = None
                         _data_clean  = None
                         _ica_labels  = []
                         _ica_removed = []
@@ -603,24 +925,23 @@ async def websocket_endpoint(websocket: WebSocket):
         while pos + window_size <= _n_samples:
             if not paused:
                 if _mode == "online" and _raw is not None:
-                    # Online : lecture lazy + filtre par fenêtre
+                    # Online : lecture de la fenêtre complète
                     window = _raw.get_data(start=pos, stop=pos + window_size)
                     window = apply_filters(
                         window, _sampling_rate,
                         notch_enabled, notch_freq,
                         lowpass_enabled, lowpass_cutoff,
+                        fft_enabled, fft_low, fft_high,
                     )
 
                     if ica_enabled and orica is not None:
-                        # ORICA : mise à jour W + reconstruction
-                        clean_win = orica.process(window)
+                        # ORICA : met à jour W, retourne activations IC
+                        ic_act = orica.process(window)
                         await websocket.send_text(json.dumps({
-                            "type":               "ica_window",
-                            "start":              pos,
-                            "raw":                window.tolist(),
-                            "clean":              clean_win.tolist(),
-                            "removed_components": _ica_removed,
-                            "labels":             _ica_labels,
+                            "type":           "ic_window",
+                            "start":          pos,
+                            "raw":            window.tolist(),
+                            "ic_activations": ic_act.tolist(),
                         }))
                     else:
                         await websocket.send_text(json.dumps({
@@ -631,11 +952,11 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 else:
                     # Offline : données pré-filtrées
-                    src = _data_filtered if _data_filtered is not None else _data
+                    src     = _data_filtered if _data_filtered is not None else _data
+                    raw_win = src[:, pos : pos + window_size]
 
                     if ica_enabled and _data_clean is not None:
-                        # ICA prête → envoie les deux fenêtres
-                        raw_win   = src[:, pos : pos + window_size]
+                        # ICA prête → raw vs ICA clean
                         clean_win = _data_clean[:, pos : pos + window_size]
                         await websocket.send_text(json.dumps({
                             "type":               "ica_window",
@@ -645,13 +966,21 @@ async def websocket_endpoint(websocket: WebSocket):
                             "removed_components": _ica_removed,
                             "labels":             _ica_labels,
                         }))
+                    elif _data_direct is not None:
+                        # Eye blink removal seul → raw vs direct clean
+                        direct_win = _data_direct[:, pos : pos + window_size]
+                        await websocket.send_text(json.dumps({
+                            "type":  "direct_window",
+                            "start": pos,
+                            "raw":   raw_win.tolist(),
+                            "clean": direct_win.tolist(),
+                        }))
                     else:
-                        # Pas d'ICA (ou en cours de calcul) → fenêtre normale
-                        window = src[:, pos : pos + window_size]
+                        # Aucun traitement → fenêtre brute
                         await websocket.send_text(json.dumps({
                             "type":  "window",
                             "start": pos,
-                            "data":  window.tolist(),
+                            "data":  raw_win.tolist(),
                         }))
 
                 pos += step
