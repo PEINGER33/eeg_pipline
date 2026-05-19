@@ -74,11 +74,11 @@ def apply_filters(
     notch_freq: float,
     lowpass_enabled: bool,
     lowpass_cutoff: float,
-    fft_enabled: bool = False,
-    fft_low: float = 1.0,
-    fft_high: float = 40.0,
+    bandpass_enabled: bool = False,
+    bandpass_low: float = 1.0,
+    bandpass_high: float = 40.0,
 ) -> np.ndarray:
-    """Apply notch, low-pass and/or FFT bandpass filter to data (n_channels, n_samples)."""
+    """Apply notch, low-pass and/or bandpass filter to data (n_channels, n_samples)."""
     min_samples = 20
     if data.shape[1] < min_samples:
         return data
@@ -95,14 +95,10 @@ def apply_filters(
         for i in range(out.shape[0]):
             out[i] = filtfilt(b, a, out[i])
 
-    if fft_enabled:
-        from scipy.fft import rfft, irfft, rfftfreq
-        n     = out.shape[1]
-        freqs = rfftfreq(n, d=1.0 / sr)
-        spec  = rfft(out, axis=1)
-        mask  = (freqs < fft_low) | (freqs > fft_high)
-        spec[:, mask] = 0.0
-        out = irfft(spec, n=n, axis=1)
+    if bandpass_enabled and 0 < bandpass_low < bandpass_high < sr / 2:
+        b, a = butter(4, [bandpass_low / (sr / 2), bandpass_high / (sr / 2)], btype="bandpass")
+        for i in range(out.shape[0]):
+            out[i] = filtfilt(b, a, out[i])
 
     return out
 
@@ -1011,9 +1007,9 @@ async def websocket_endpoint(websocket: WebSocket):
     notch_freq      = 50.0
     lowpass_enabled = False
     lowpass_cutoff  = 40.0
-    fft_enabled     = False
-    fft_low         = 1.0
-    fft_high        = 40.0
+    bandpass_enabled = False
+    bandpass_low     = 1.0
+    bandpass_high    = 40.0
     ica_enabled     = False
     orica: ORICAProcessor | None = None
     _ica_removed    = []
@@ -1022,7 +1018,7 @@ async def websocket_endpoint(websocket: WebSocket):
     async def receive_commands():
         nonlocal paused, pos, window_size, ica_enabled, orica
         nonlocal notch_enabled, notch_freq, lowpass_enabled, lowpass_cutoff
-        nonlocal fft_enabled, fft_low, fft_high
+        nonlocal bandpass_enabled, bandpass_low, bandpass_high
         global _data_filtered, _data_direct, _data_clean, _ica_labels, _ica_removed
         try:
             async for raw_msg in websocket.iter_text():
@@ -1049,15 +1045,15 @@ async def websocket_endpoint(websocket: WebSocket):
                     notch_freq      = float(cmd.get("notch_freq",     50.0))
                     lowpass_enabled = bool(cmd.get("lowpass_enabled", False))
                     lowpass_cutoff  = float(cmd.get("lowpass_cutoff", 40.0))
-                    fft_enabled     = bool(cmd.get("fft_enabled",     False))
-                    fft_low         = float(cmd.get("fft_low",        1.0))
-                    fft_high        = float(cmd.get("fft_high",       40.0))
+                    bandpass_enabled = bool(cmd.get("bandpass_enabled", False))
+                    bandpass_low     = float(cmd.get("bandpass_low",    1.0))
+                    bandpass_high    = float(cmd.get("bandpass_high",   40.0))
                     if _mode == "offline" and _data is not None:
                         _data_filtered = apply_filters(
                             _data, _sampling_rate,
                             notch_enabled, notch_freq,
                             lowpass_enabled, lowpass_cutoff,
-                            fft_enabled, fft_low, fft_high,
+                            bandpass_enabled, bandpass_low, bandpass_high,
                         )
                         # Réinitialise méthode directe et ICA si les filtres changent
                         _data_direct = None
@@ -1208,7 +1204,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         window, _sampling_rate,
                         notch_enabled, notch_freq,
                         lowpass_enabled, lowpass_cutoff,
-                        fft_enabled, fft_low, fft_high,
+                        bandpass_enabled, bandpass_low, bandpass_high,
                     )
 
                     if ica_enabled and orica is not None:

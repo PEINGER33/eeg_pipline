@@ -456,4 +456,77 @@ result = await loop.run_in_executor(
 
 ---
 
+### [19 mai 2026] — Remplacement du filtre FFT par un bandpass Butterworth + corrections UI
+
+#### Contexte
+Le pipeline disposait d'un filtre "FFT bandpass" qui utilisait la FFT comme outil intermédiaire (zeroing spectral entre `fft_low` et `fft_high`, puis IFFT). Ce filtre posait deux problèmes :
+1. **Artefacts de Gibbs** : la coupure rectangulaire parfaite en fréquence introduit des oscillations dans le domaine temporel.
+2. **Hypothèse de périodicité** : la FFT suppose un signal périodique, ce qui est faux pour l'EEG — distorsions aux bords de fenêtre.
+De plus, il faisait doublon partiel avec le filtre low-pass Butterworth déjà en place.
+
+#### Solution
+Remplacement du filtre FFT par un **bandpass Butterworth ordre 4 zero-phase** (`filtfilt`), cohérent avec le notch et le low-pass déjà implémentés.
+
+```python
+# Avant — brick-wall FFT
+spec[:, mask] = 0.0
+out = irfft(spec, n=n, axis=1)
+
+# Après — bandpass Butterworth
+b, a = butter(4, [bandpass_low / (sr / 2), bandpass_high / (sr / 2)], btype="bandpass")
+out[i] = filtfilt(b, a, out[i])
+```
+
+#### Renommage des paramètres
+Les paramètres `fft_enabled / fft_low / fft_high` ont été renommés `bandpass_enabled / bandpass_low / bandpass_high` côté Python et Flutter. Le message WebSocket `set_filters` utilise les nouvelles clés.
+
+#### Correction label "Clean (FastICA)" en mode ORICA
+En mode online, la fenêtre "clean" affichait incorrectement le label `Clean (FastICA)` alors que c'est ORICA qui effectue la décomposition. Corrigé : le label est maintenant dynamique.
+
+```dart
+_cleanLabel = _isOnline ? 'Clean (ORICA)' : 'Clean (FastICA)';
+```
+
+#### Suppression de l'indicateur de convergence ORICA
+Le panel "IC Activations" affichait une barre de progression et un texte "Converging… / Converged" basés sur le `nonstatidx`. Ces éléments ont été supprimés de l'UI — le panel affiche uniquement le titre et les composantes IC.
+
+#### Fichiers modifiés
+| Fichier | Modification |
+|---------|-------------|
+| `backend/main.py` | FFT supprimé, bandpass Butterworth ajouté, paramètres renommés |
+| `lib/main.dart` | Paramètres renommés, label clean corrigé, indicateur convergence supprimé |
+
+---
+
+### [19 mai 2026 (suite)] — Correction bug mode online/offline après ORICA + ICLabel
+
+#### Problème identifié
+Après application de ORICA + ICLabel, plusieurs comportements incorrects apparaissaient :
+1. Le label "Clean (FastICA)" s'affichait à la place de "Clean (ORICA)"
+2. Le bouton eye blink devenait accessible (réservé au mode offline)
+3. Re-appuyer sur le bouton ICA déclenchait FastICA (comportement offline)
+
+#### Cause racine
+La fonction `_run_iclabel_on_orica` (backend) force `_mode = "offline"` après avoir construit le signal nettoyé. Quand Flutter rappelle `_connect()` après ICLabel, le backend renvoie un `meta` avec `mode: "offline"`, ce qui bascule tout l'état Flutter en mode offline.
+
+Ce comportement était intentionnel à l'origine (permettre la navigation libre après ICLabel), mais l'UI Flutter n'était pas prévue pour ce basculement.
+
+#### Solution retenue
+Une fois ORICA + ICLabel appliqué, l'état est définitif — impossible de désactiver le clean, il faut fermer le dataset et recommencer. Implémenté via un flag `_iclabelApplied` :
+
+- `_iclabelApplied = true` après succès de `_applyIclabelOrica`
+- Le bouton ICA est désactivé avec tooltip "Close dataset to restart"
+- `_cleanLabel = 'Clean (ORICA)'` fixé directement dans `_applyIclabelOrica`, indépendamment de `_isOnline` (contourne le bug de label)
+- Flag remis à `false` au disconnect et au reset
+
+#### Problème résiduel connu
+Le label "Clean (FastICA)" apparaît toujours dans certains cas pour ORICA. À investiguer.
+
+#### Fichiers modifiés
+| Fichier | Modification |
+|---------|-------------|
+| `lib/main.dart` | Ajout `_iclabelApplied`, bouton ICA bloqué post-ICLabel, label ORICA fixé |
+
+---
+
 *— fin des entrées actuelles —*

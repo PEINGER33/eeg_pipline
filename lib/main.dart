@@ -9,12 +9,12 @@ import 'package:http/http.dart' as http;
 
 // ── Backend URLs ───────────────────────────────────────────────────────────
 // Desktop / Chrome
-const String kBackendHttp = 'http://localhost:8000';
-const String kBackendWs   = 'ws://localhost:8000/ws';
+// const String kBackendHttp = 'http://localhost:8000';
+// const String kBackendWs   = 'ws://localhost:8000/ws';
 
 // Mobile (same WiFi network)
-// const String kBackendHttp = 'http://172.20.10.2:8000';
-// const String kBackendWs   = 'ws://172.20.10.2:8000/ws';
+const String kBackendHttp = 'http://192.168.114.119:8000';
+const String kBackendWs   = 'ws://192.168.114.119:8000/ws';
 
 
 void main() {
@@ -82,9 +82,9 @@ class _HomePageState extends State<HomePage> {
   double _notchFreq         = 50.0;
   bool   _lowpassEnabled    = false;
   double _lowpassCutoff     = 40.0;
-  bool   _fftEnabled        = false;
-  double _fftLow            = 1.0;
-  double _fftHigh           = 40.0;
+  bool   _bandpassEnabled   = false;
+  double _bandpassLow       = 1.0;
+  double _bandpassHigh      = 40.0;
 
   // ── Eye blink removal (Zhang 2017) ─────────────────────────────────────────
   bool _eyeBlinkEnabled   = false;
@@ -94,6 +94,7 @@ class _HomePageState extends State<HomePage> {
   // ── ICA ────────────────────────────────────────────────────────────────────
   bool               _icaEnabled      = false;
   bool               _icaComputing    = false;
+  bool               _iclabelApplied  = false;
   bool               _signalDone      = false;
   List<List<double>> _cleanWindowData = [];
   String             _cleanLabel      = 'Clean';
@@ -123,9 +124,9 @@ class _HomePageState extends State<HomePage> {
       'notch_freq':      _notchFreq,
       'lowpass_enabled': _lowpassEnabled,
       'lowpass_cutoff':  _lowpassCutoff,
-      'fft_enabled':     _fftEnabled,
-      'fft_low':         _fftLow,
-      'fft_high':        _fftHigh,
+      'bandpass_enabled': _bandpassEnabled,
+      'bandpass_low':     _bandpassLow,
+      'bandpass_high':    _bandpassHigh,
     }));
   }
 
@@ -167,11 +168,13 @@ class _HomePageState extends State<HomePage> {
         final removed = List<int>.from(body['removed_components'] as List);
         final labels  = List<String>.from(body['labels'] as List);
         setState(() {
-          _icaComputing = false;
-          _icaRemoved   = removed;
-          _icaLabels    = labels;
-          _signalDone   = false;
-          _icaEnabled   = true;
+          _icaComputing   = false;
+          _icaRemoved     = removed;
+          _icaLabels      = labels;
+          _signalDone     = false;
+          _icaEnabled     = true;
+          _iclabelApplied = true;
+          _cleanLabel     = 'Clean (ORICA)';
           _status = 'ICLabel done — ${removed.length} component(s) removed';
         });
         _connect();
@@ -262,6 +265,7 @@ class _HomePageState extends State<HomePage> {
       _windowStart = 0; _icaEnabled = false; _icaComputing = false;
       _icaLabels = []; _icaRemoved = [];
       _icActivations = []; _nonstatidx = null; _signalDone = false;
+      _iclabelApplied = false;
       _eyeBlinkEnabled = false; _eyeBlinkComputing = false; _eyeBlinkNBlinks = 0;
       _status = 'Disconnected';
     });
@@ -277,6 +281,7 @@ class _HomePageState extends State<HomePage> {
       _icaEnabled = false; _icaComputing = false;
       _icaLabels = []; _icaRemoved = [];
       _icActivations = []; _nonstatidx = null; _signalDone = false;
+      _iclabelApplied = false;
       _eyeBlinkEnabled = false; _eyeBlinkComputing = false; _eyeBlinkNBlinks = 0;
       _status = 'Start the Python server then import an EDF or CSV file';
     });
@@ -342,7 +347,7 @@ void _onMessage(dynamic raw) {
           _windowStart     = msg['start'] as int;
           _windowData      = _parseChannels(msg['raw'] as List);
           _cleanWindowData = _parseChannels(msg['clean'] as List);
-          _cleanLabel      = 'Clean (FastICA)';
+          _cleanLabel      = _isOnline ? 'Clean (ORICA)' : 'Clean (FastICA)';
           _icaRemoved      = List<int>.from(msg['removed_components'] as List);
           _icaLabels       = List<String>.from(msg['labels'] as List);
         });
@@ -447,7 +452,7 @@ void _onMessage(dynamic raw) {
           if (hasData) ...[
             IconButton(
               icon: Icon(Icons.tune,
-                  color: (_notchEnabled || _lowpassEnabled || _fftEnabled)
+                  color: (_notchEnabled || _lowpassEnabled || _bandpassEnabled)
                       ? Colors.teal.shade300 : null),
               tooltip: 'Preprocessing',
               onPressed: () => setState(() => _showPreprocessing = !_showPreprocessing),
@@ -496,9 +501,10 @@ void _onMessage(dynamic raw) {
                 : IconButton(
                     icon: Icon(Icons.psychology,
                         color: _icaEnabled ? Colors.purple.shade300 : null),
-                    tooltip: _icaEnabled ? 'Disable ICA'
+                    tooltip: _iclabelApplied ? 'Close dataset to restart'
+                        : _icaEnabled ? 'Disable ICA'
                         : isOffline ? 'Enable ICA (FastICA)' : 'Enable ICA (ORICA)',
-                    onPressed: _connected ? _toggleIca : null,
+                    onPressed: (_connected && !_iclabelApplied) ? _toggleIca : null,
                   ),
             if (_signalDone)
               FilledButton.icon(
@@ -530,12 +536,7 @@ void _onMessage(dynamic raw) {
               label: Text(_uploading ? 'Uploading…' : _connecting ? 'Connecting…' : 'EDF'),
               style: FilledButton.styleFrom(backgroundColor: Colors.teal.shade700),
             ),
-          ] else
-            TextButton.icon(
-              onPressed: _disconnect,
-              icon: const Icon(Icons.sensors_off),
-              label: const Text('Disconnect'),
-            ),
+          ],
           const SizedBox(width: 8),
         ],
       ),
@@ -545,14 +546,14 @@ void _onMessage(dynamic raw) {
           _PreprocessingBar(
             notchEnabled: _notchEnabled, notchFreq: _notchFreq,
             lowpassEnabled: _lowpassEnabled, lowpassCutoff: _lowpassCutoff,
-            fftEnabled: _fftEnabled, fftLow: _fftLow, fftHigh: _fftHigh,
+            bandpassEnabled: _bandpassEnabled, bandpassLow: _bandpassLow, bandpassHigh: _bandpassHigh,
             onNotchToggle:   (v) { setState(() => _notchEnabled = v);   _sendFilters(); },
             onNotchFreq:     (v) { setState(() => _notchFreq = v);      _sendFilters(); },
             onLowpassToggle: (v) { setState(() => _lowpassEnabled = v); _sendFilters(); },
             onLowpassCutoff: (v) { setState(() => _lowpassCutoff = v);  _sendFilters(); },
-            onFftToggle:     (v) { setState(() => _fftEnabled = v);     _sendFilters(); },
-            onFftLow:        (v) { setState(() => _fftLow = v);         _sendFilters(); },
-            onFftHigh:       (v) { setState(() => _fftHigh = v);        _sendFilters(); },
+            onBandpassToggle: (v) { setState(() => _bandpassEnabled = v);  _sendFilters(); },
+            onBandpassLow:    (v) { setState(() => _bandpassLow = v);      _sendFilters(); },
+            onBandpassHigh:   (v) { setState(() => _bandpassHigh = v);     _sendFilters(); },
           ),
         Expanded(
           child: hasData
@@ -579,7 +580,6 @@ void _onMessage(dynamic raw) {
                   icaRemoved: _icaRemoved,
                   icaOnline: icaOnline,
                   icActivations: _icActivations,
-                  nonstatidx: _nonstatidx,
                   blinkRegions: _blinkRegions,
                 )
               : const _EmptyView(),
@@ -664,7 +664,6 @@ class _SignalView extends StatelessWidget {
   final List<int>                 icaRemoved;
   final bool                      icaOnline;
   final List<List<double>>        icActivations;
-  final double?                   nonstatidx;
   final List<List<double>>        blinkRegions;
   const _SignalView({
     required this.channelNames,
@@ -689,7 +688,6 @@ class _SignalView extends StatelessWidget {
     required this.icaRemoved,
     required this.icaOnline,
     required this.icActivations,
-    required this.nonstatidx,
     required this.blinkRegions,
   });
 
@@ -782,7 +780,7 @@ class _SignalView extends StatelessWidget {
                   signalColor: Colors.blue,
                 )),
                 const VerticalDivider(width: 1, color: Colors.white12),
-                Expanded(child: _IcPanel(icActivations: icActivations, nonstatidx: nonstatidx)),
+                Expanded(child: _IcPanel(icActivations: icActivations)),
               ])
             : _offlineDual
             // FastICA offline: raw (left) + clean (right)
@@ -834,52 +832,18 @@ class _SignalView extends StatelessWidget {
 
 class _IcPanel extends StatelessWidget {
   final List<List<double>> icActivations;
-  final double?            nonstatidx;
-  const _IcPanel({required this.icActivations, required this.nonstatidx});
+  const _IcPanel({required this.icActivations});
 
   @override
   Widget build(BuildContext context) {
     final n = icActivations.length;
 
-    // Convergence : nonstatidx → 0 quand W converge
-    // On normalise sur [0,1] avec un seuil empirique de 5.0
-    final convProgress = nonstatidx != null
-        ? (1.0 - (nonstatidx! / 5.0).clamp(0.0, 1.0))
-        : 0.0;
-    final converged = nonstatidx != null && nonstatidx! < 0.5;
-
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Padding(
         padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
-        child: Row(children: [
-          Text('IC Activations',
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold,
-                  color: Colors.purple.shade300)),
-          if (nonstatidx != null) ...[
-            const SizedBox(width: 8),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                Text(
-                  converged ? 'Converged' : 'Converging…',
-                  style: TextStyle(
-                    fontSize: 9,
-                    color: converged ? Colors.green.shade400 : Colors.orange.shade300,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Text('(idx: ${nonstatidx!.toStringAsFixed(2)})',
-                    style: const TextStyle(fontSize: 9, color: Colors.grey)),
-              ]),
-              const SizedBox(height: 2),
-              LinearProgressIndicator(
-                value: convProgress,
-                backgroundColor: Colors.white10,
-                color: converged ? Colors.green.shade400 : Colors.orange.shade400,
-                minHeight: 3,
-              ),
-            ])),
-          ],
-        ]),
+        child: Text('IC Activations',
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold,
+                color: Colors.purple.shade300)),
       ),
       Expanded(
         child: n == 0
@@ -1207,30 +1171,30 @@ class _PreprocessingBar extends StatelessWidget {
   final double notchFreq;
   final bool   lowpassEnabled;
   final double lowpassCutoff;
-  final bool   fftEnabled;
-  final double fftLow;
-  final double fftHigh;
+  final bool   bandpassEnabled;
+  final double bandpassLow;
+  final double bandpassHigh;
   final void Function(bool)   onNotchToggle;
   final void Function(double) onNotchFreq;
   final void Function(bool)   onLowpassToggle;
   final void Function(double) onLowpassCutoff;
-  final void Function(bool)   onFftToggle;
-  final void Function(double) onFftLow;
-  final void Function(double) onFftHigh;
+  final void Function(bool)   onBandpassToggle;
+  final void Function(double) onBandpassLow;
+  final void Function(double) onBandpassHigh;
 
   const _PreprocessingBar({
-    required this.notchEnabled,   required this.notchFreq,
-    required this.lowpassEnabled, required this.lowpassCutoff,
-    required this.fftEnabled,     required this.fftLow, required this.fftHigh,
-    required this.onNotchToggle,  required this.onNotchFreq,
+    required this.notchEnabled,    required this.notchFreq,
+    required this.lowpassEnabled,  required this.lowpassCutoff,
+    required this.bandpassEnabled, required this.bandpassLow, required this.bandpassHigh,
+    required this.onNotchToggle,   required this.onNotchFreq,
     required this.onLowpassToggle, required this.onLowpassCutoff,
-    required this.onFftToggle,    required this.onFftLow, required this.onFftHigh,
+    required this.onBandpassToggle, required this.onBandpassLow, required this.onBandpassHigh,
   });
 
   static const _notchFreqs     = [50.0, 60.0];
   static const _lowpassCutoffs = [10.0, 20.0, 30.0, 40.0, 50.0, 70.0, 100.0];
-  static const _fftLowOptions  = [0.5, 1.0, 2.0, 4.0, 8.0];
-  static const _fftHighOptions = [20.0, 30.0, 40.0, 50.0, 70.0, 100.0];
+  static const _bandpassLowOptions  = [0.5, 1.0, 2.0, 4.0, 8.0];
+  static const _bandpassHighOptions = [20.0, 30.0, 40.0, 50.0, 70.0, 100.0];
 
   @override
   Widget build(BuildContext context) {
@@ -1275,29 +1239,29 @@ class _PreprocessingBar extends StatelessWidget {
         ],
         const SizedBox(width: 16),
         FilterChip(
-          label: const Text('FFT bandpass'), selected: fftEnabled, onSelected: onFftToggle,
+          label: const Text('Bandpass'), selected: bandpassEnabled, onSelected: onBandpassToggle,
           selectedColor: Colors.orange.shade800,
-          labelStyle: TextStyle(fontSize: 11, color: fftEnabled ? Colors.white : Colors.grey),
+          labelStyle: TextStyle(fontSize: 11, color: bandpassEnabled ? Colors.white : Colors.grey),
         ),
-        if (fftEnabled) ...[
+        if (bandpassEnabled) ...[
           const SizedBox(width: 6),
           DropdownButton<double>(
-            value: fftLow, underline: const SizedBox(), isDense: true,
+            value: bandpassLow, underline: const SizedBox(), isDense: true,
             style: const TextStyle(fontSize: 11, color: Colors.white70),
             dropdownColor: const Color(0xFF1C2130),
-            items: _fftLowOptions.map((f) =>
+            items: _bandpassLowOptions.map((f) =>
                 DropdownMenuItem(value: f, child: Text('${f}Hz'))).toList(),
-            onChanged: (v) { if (v != null) onFftLow(v); },
+            onChanged: (v) { if (v != null) onBandpassLow(v); },
           ),
           const Padding(padding: EdgeInsets.symmetric(horizontal: 4),
               child: Text('–', style: TextStyle(fontSize: 11, color: Colors.white54))),
           DropdownButton<double>(
-            value: fftHigh, underline: const SizedBox(), isDense: true,
+            value: bandpassHigh, underline: const SizedBox(), isDense: true,
             style: const TextStyle(fontSize: 11, color: Colors.white70),
             dropdownColor: const Color(0xFF1C2130),
-            items: _fftHighOptions.map((f) =>
+            items: _bandpassHighOptions.map((f) =>
                 DropdownMenuItem(value: f, child: Text('${f.toInt()}Hz'))).toList(),
-            onChanged: (v) { if (v != null) onFftHigh(v); },
+            onChanged: (v) { if (v != null) onBandpassHigh(v); },
           ),
         ],
       ]),
