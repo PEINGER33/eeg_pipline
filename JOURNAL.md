@@ -423,4 +423,37 @@ Le message de statut affiche "ORICA prête" ou "FastICA prête".
 
 ---
 
+### [15 mai 2026] — Correction bug `n_comp` dans le handler `set_ica` offline
+
+#### Problème
+Dans `receive_commands()` (WebSocket handler), l'appel à `compute_ica_offline` passait
+une variable `n_comp` qui n'existait pas dans ce scope — uniquement définie à l'intérieur
+de la fonction elle-même. Résultat : `NameError` au moment d'activer l'ICA en mode offline,
+rendant FastICA inutilisable.
+
+#### Correction
+Suppression de l'argument superflu. `compute_ica_offline` utilise sa valeur par défaut
+`n_components=15`, ce qui est le comportement voulu.
+
+```python
+# Avant (crash)
+result = await loop.run_in_executor(
+    None, compute_ica_offline,
+    src, _channel_names, _sampling_rate, n_comp,
+)
+
+# Après (correct)
+result = await loop.run_in_executor(
+    None, compute_ica_offline,
+    src, _channel_names, _sampling_rate,
+)
+```
+
+#### Fichier modifié
+| Fichier | Ligne |
+|---------|-------|
+| `backend/main.py` | ~1081 — appel `compute_ica_offline` dans handler `set_ica` |
+
+---
+
 *— fin des entrées actuelles —*

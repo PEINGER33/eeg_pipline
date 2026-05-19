@@ -47,6 +47,7 @@ _data_direct:     np.ndarray | None     = None   # après méthode directe (eye 
 _data_clean:      np.ndarray | None     = None   # données nettoyées par ICA (offline)
 _ica_labels:      list[str]             = []     # labels des composantes retirées
 _ica_removed:     list[int]             = []     # indices des composantes retirées
+_session_id:      int                   = 0      # incrémenté à chaque upload
 _tmp_path:        str | None            = None
 _channel_names:   list[str]             = []
 _sampling_rate:   float                 = 256.0
@@ -260,7 +261,8 @@ def _fp1_channel_idx(channel_names: list[str]) -> int | None:
 
 
 def _argextrema(sig: np.ndarray, a: int, b: int, kind: str) -> int:
-    a = max(0, a); b = min(len(sig) - 1, b)
+    n = len(sig)
+    a = max(0, min(a, n - 1)); b = max(0, min(b, n - 1))
     if a > b:
         return a
     fn = np.argmin if kind == "min" else np.argmax
@@ -268,7 +270,8 @@ def _argextrema(sig: np.ndarray, a: int, b: int, kind: str) -> int:
 
 
 def _arg_nearest_zero(sig: np.ndarray, a: int, b: int) -> int:
-    a = max(0, a); b = min(len(sig) - 1, b)
+    n = len(sig)
+    a = max(0, min(a, n - 1)); b = max(0, min(b, n - 1))
     if a > b:
         return a
     return a + int(np.argmin(np.abs(sig[a:b + 1])))
@@ -357,7 +360,7 @@ def detect_and_remove_eyeblinks_zhang2017(
 
     1. Detect blinks via upward threshold crossings in Fp1.
     2. Per blink: locate inflection points I1–I4 and zero points Z1–Z4.
-    3. Build a piecewise linear template (§2.4.4).
+    3. Build a piecewise linear template
     4. Scale template to each channel by least squares (Gratton 1998) and subtract.
 
     Returns
@@ -481,94 +484,228 @@ def detect_and_remove_eyeblinks_zhang2017(
         done_regions.append((t_start, t_end))
         n_removed += 1
 
-    return result, n_removed, blink_times
+    regions_sec = [[float(s) / sr, float(e) / sr] for s, e in done_regions]
+    return result, n_removed, blink_times, regions_sec
 
 
 class ORICAProcessor:
     """
     Online Recursive ICA (ORICA) — Hsu et al. (2012).
-    Blanchiment fixe via sqrtm(cov). Mise à jour de W par gradient naturel
-    avec facteur d'oubli cooling. Orthogonalisation après chaque bloc.
-    Retourne les activations IC Y = W · sphere · X, fenêtre par fenêtre.
+
+    Inspiré de Orica2.py avec :
+      - Blanchiment fixe ou online (online_whitening)
+      - 3 modes de facteur d'oubli : "cooling", "constant", "adaptive"
+      - Composantes sous-gaussiennes (nsub)
+      - Suivi de convergence via nonstatidx (evalconverg)
+      - Passes multiples sur la fenêtre (numpass)
     """
 
     def __init__(
         self,
-        X_init_pos: np.ndarray,   # (n_positioned, n_samples) — buffer initial
-        orig_indices: list[int],  # indices dans le signal complet
-        lambda_0: float = 0.995,
-        gamma: float = 0.6,
-        block_size: int = 8,
+        X_init_pos: np.ndarray,                # (n_comp, n_samples) — buffer initial
+        orig_indices: list[int],               # indices dans le signal complet
+        lambda_0: float       = 0.995,
+        gamma: float          = 0.6,
+        block_size: int       = 8,
+        online_whitening: bool = False,        # True → dynamicWhitening activé
+        forgetfac: str        = "cooling",     # "cooling" | "constant" | "adaptive"
+        localstat: float      = np.inf,        # τ pour FF_lambda_const (cooling/constant)
+        nsub: int             = 0,             # nb composantes sous-gaussiennes
+        evalconverg: bool     = False,         # suivi de convergence (nonstatidx)
+        numpass: int          = 1,             # passes par fenêtre
+        nlfunc                = None,          # fonction de score custom (remplace tanh)
     ):
-        self.orig_indices = np.asarray(orig_indices)
-        self.lambda_0     = lambda_0
-        self.gamma        = gamma
-        self.block_size   = block_size
-        self.t            = 1
-        self.n_comp       = X_init_pos.shape[0]
+        self.orig_indices     = np.asarray(orig_indices)
+        self.n_comp           = X_init_pos.shape[0]
+        self.block_size       = block_size
+        self.online_whitening = online_whitening
+        self.FF_profile       = forgetfac
+        self.numpass          = numpass
+        self.nlfunc           = nlfunc
 
-        cov = np.cov(X_init_pos)
-        sqrtm_cov   = scipy.linalg.sqrtm(cov).real
-        self.sphere = 2.0 * np.linalg.inv(sqrtm_cov)
-        self.W      = np.eye(self.n_comp, dtype=np.float64)
+        # ── Paramètres facteur d'oubli ────────────────────────────────────────
+        self.FF_lambda_0               = lambda_0
+        self.FF_gamma                  = gamma
+        self.FF_tauconst               = localstat
+        self.FF_decay_rate_alpha       = 0.02
+        self.FF_upper_bound_beta       = 0.001
+        self.FF_trans_band_width_gamma = 1.0
+        self.FF_trans_band_center      = 5.0
+        self.FF_lambda_init            = 0.1
+
+        if forgetfac in ("cooling", "constant"):
+            self.FF_lambda_const = (1 - np.exp(-1.0 / localstat)
+                                    if np.isfinite(localstat) else 0.0)
+
+        # ── État ─────────────────────────────────────────────────────────────
+        self.state_counter  = 0
+        self.state_lambda_k = np.zeros(block_size)
+
+        # ── Blanchiment ───────────────────────────────────────────────────────
+        cov            = np.cov(X_init_pos)
+        sqrtm_cov      = scipy.linalg.sqrtm(cov).real
+        self.sphere    = 2.0 * np.linalg.inv(sqrtm_cov)
+        self.W         = np.eye(self.n_comp, dtype=np.float64)
+
+        # ── Composantes sous-gaussiennes ──────────────────────────────────────
+        # True  → super-gaussienne : f = -2·tanh(y)
+        # False → sous-gaussienne  : f = +2·tanh(y)
+        self.kurtsign = np.ones(self.n_comp, dtype=bool)
+        if nsub > 0:
+            self.kurtsign[:nsub] = False
+
+        # ── Suivi de convergence ──────────────────────────────────────────────
+        self.eval_converge          = evalconverg
+        self.leaky_avg_delta        = 0.01
+        self.state_rn               = None
+        self.nonstatidx             = 0.0
+        self.state_min_non_stat_idx = None
+
+    # ── Facteur d'oubli ───────────────────────────────────────────────────────
 
     def _cooling_ff(self, t_range: np.ndarray) -> np.ndarray:
-        return self.lambda_0 / np.power(t_range, self.gamma)
+        lam = self.FF_lambda_0 / np.power(t_range, self.FF_gamma)
+        if np.isfinite(self.FF_tauconst):
+            lam = np.maximum(lam, self.FF_lambda_const)
+        return lam
+
+    def _adaptive_ff(self, t_range: np.ndarray, ratio_norm_rn: float) -> np.ndarray:
+        gain = (self.FF_upper_bound_beta * 0.5
+                * (1.0 + np.tanh((ratio_norm_rn - self.FF_trans_band_center)
+                                 / self.FF_trans_band_width_gamma)))
+        lam_prev = (float(self.state_lambda_k[-1])
+                    if self.state_lambda_k.size > 0 else self.FF_lambda_init)
+        n = np.arange(1, len(t_range) + 1, dtype=float)
+        if gain > 1e-10:
+            lam = ((1 + gain)**n * lam_prev
+                   - self.FF_decay_rate_alpha
+                   * ((1 + gain)**(2*n - 1) - (1 + gain)**(n - 1))
+                   / gain * lam_prev**2)
+        else:
+            lam = np.full(len(t_range), lam_prev)
+        return np.clip(lam, 0.0, 1.0 - 1e-8)
+
+    def _get_ff(self, t_range: np.ndarray) -> np.ndarray:
+        if self.FF_profile == "cooling":
+            return self._cooling_ff(t_range)
+        elif self.FF_profile == "constant":
+            return np.full(len(t_range), self.FF_lambda_const)
+        else:  # adaptive
+            ratio = (self.nonstatidx / self.state_min_non_stat_idx
+                     if self.state_min_non_stat_idx else 1.0)
+            return self._adaptive_ff(t_range, ratio)
+
+    # ── Blanchiment online (dynamicWhitening) ─────────────────────────────────
+
+    def _dynamic_whitening(self, block_raw: np.ndarray, lam: np.ndarray) -> None:
+        num_points = block_raw.shape[1]
+        mid        = int(np.ceil(num_points / 2)) - 1
+        lambda_avg = 1.0 - lam[mid]
+        v          = self.sphere @ block_raw
+        q_white    = (lambda_avg / (1.0 - lambda_avg)
+                      + np.trace(v.T @ v) / num_points)
+        self.sphere = (1.0 / lambda_avg
+                       * (self.sphere
+                          - v @ v.T / num_points / q_white @ self.sphere))
+
+    # ── Mise à jour W (dynamicOrica) ──────────────────────────────────────────
+
+    def _dynamic_orica(self, block: np.ndarray, t_range: np.ndarray) -> None:
+        n_blk = block.shape[1]
+
+        Y = self.W @ block
+
+        if self.nlfunc is not None:
+            f = self.nlfunc(Y)
+        else:
+            # super-gaussien : -2·tanh  |  sous-gaussien : +2·tanh
+            f = np.where(self.kurtsign[:, None], -2.0 * np.tanh(Y), 2.0 * np.tanh(Y))
+
+        # ── Suivi de convergence ──────────────────────────────────────────────
+        if self.eval_converge:
+            model_fitness = np.eye(self.n_comp) + Y @ f.T / n_blk
+            if self.state_rn is None:
+                self.state_rn = model_fitness
+            else:
+                self.state_rn = ((1 - self.leaky_avg_delta) * self.state_rn
+                                 + self.leaky_avg_delta * model_fitness)
+            self.nonstatidx = float(np.linalg.norm(self.state_rn, "fro"))
+            if self.state_min_non_stat_idx is None:
+                self.state_min_non_stat_idx = self.nonstatidx
+            else:
+                self.state_min_non_stat_idx = max(
+                    min(self.state_min_non_stat_idx, self.nonstatidx), 1.0
+                )
+
+        # ── Facteur d'oubli ───────────────────────────────────────────────────
+        lam = self._get_ff(t_range)
+        self.state_lambda_k = lam
+        self.state_counter += n_blk
+
+        # ── Gradient naturel ──────────────────────────────────────────────────
+        lambda_prod = np.prod(1.0 / (1.0 - lam))
+        fy_dot      = np.einsum("it,it->t", f, Y)
+        q           = 1.0 + lam * (fy_dot - 1.0)
+        correction  = (Y * (lam / q)) @ f.T
+        self.W      = lambda_prod * (self.W - correction @ self.W)
+
+        # ── Orthogonalisation ─────────────────────────────────────────────────
+        D_val, V_val = np.linalg.eig(self.W @ self.W.T)
+        D_val        = np.abs(D_val.real)
+        D_isqrt      = np.diag(1.0 / np.sqrt(D_val + 1e-12))
+        self.W       = V_val.real @ D_isqrt @ V_val.real.T @ self.W
+
+    # ── Interface principale ──────────────────────────────────────────────────
 
     def process(self, X_full: np.ndarray) -> np.ndarray:
         """
-        Met à jour W et retourne les activations IC Y = W·sphere·X_pos.
+        Met à jour W (numpass passes) et retourne Y = W·sphere·X_pos.
         Shape retournée : (n_comp, n_samples).
         """
-        X_pos   = X_full[self.orig_indices, :]
-        X_white = self.sphere @ X_pos
-
-        _, n_samp = X_white.shape
+        X_pos     = X_full[self.orig_indices, :]
+        _, n_samp = X_pos.shape
         n_blocks  = max(1, n_samp // self.block_size)
 
-        for bi in range(n_blocks):
-            start = bi * n_samp // n_blocks
-            end   = min(n_samp, (bi + 1) * n_samp // n_blocks)
-            block = X_white[:, start:end]
-            n_blk = block.shape[1]
+        for _ in range(self.numpass):
+            for bi in range(n_blocks):
+                start     = bi * n_samp // n_blocks
+                end       = min(n_samp, (bi + 1) * n_samp // n_blocks)
+                block_raw = X_pos[:, start:end]
+                n_blk     = block_raw.shape[1]
 
-            t_range = np.arange(self.t, self.t + n_blk, dtype=float)
-            lam     = self._cooling_ff(t_range)
+                t_range = np.arange(
+                    self.state_counter + 1,
+                    self.state_counter + 1 + n_blk,
+                    dtype=float,
+                )
 
-            Y = self.W @ block
-            f = -2.0 * np.tanh(Y)
+                if self.online_whitening:
+                    lam = self._get_ff(t_range)
+                    self._dynamic_whitening(block_raw, lam)
 
-            fy_dot      = np.einsum("it,it->t", f, Y)
-            q           = 1.0 + lam * (fy_dot - 1.0)
-            lambda_prod = np.prod(1.0 / (1.0 - lam))
-            correction  = (Y * (lam / q)) @ f.T
-            self.W      = lambda_prod * (self.W - correction @ self.W)
+                block = self.sphere @ block_raw
+                self._dynamic_orica(block, t_range)
 
-            D_val, V_val = np.linalg.eig(self.W @ self.W.T)
-            D_val        = np.abs(D_val.real)
-            D_isqrt      = np.diag(1.0 / np.sqrt(D_val + 1e-12))
-            self.W       = V_val.real @ D_isqrt @ V_val.real.T @ self.W
-
-            self.t += n_blk
-
-        return self.W @ X_white  # (n_comp, n_samp)
+        return self.W @ (self.sphere @ X_pos)
 
 
 def _init_orica(
     raw: mne.io.BaseRaw,
     channel_names: list[str],
     sr: float,
-    n_components: int,
+    online_whitening: bool = False,
+    forgetfac: str         = "cooling",
+    localstat: float       = np.inf,
+    nsub: int              = 0,
+    evalconverg: bool      = False,
+    numpass: int           = 1,
 ) -> "ORICAProcessor":
     """
-    Initialise ORICA avec W = identité — pas de bootstrap FastICA.
-    W convergera progressivement via les fenêtres du streaming.
-    ICLabel sera lancé pour la première fois à la 50ème fenêtre (~5s).
+    Initialise ORICA — W = identité, convergence progressive via le streaming.
     Tourne dans run_in_executor (non-bloquant).
     """
-    # Lire juste quelques samples pour obtenir les indices de canaux positionnés
     probe_samples = min(int(sr * 2), int(raw.n_times))
-    X_probe = raw.get_data(start=0, stop=probe_samples)
+    X_probe       = raw.get_data(start=0, stop=probe_samples)
 
     _, orig_indices, _ = _get_positioned_channels(X_probe, channel_names, sr)
 
@@ -577,7 +714,16 @@ def _init_orica(
 
     X_init_pos = X_probe[np.asarray(orig_indices), :]
 
-    return ORICAProcessor(X_init_pos, orig_indices=orig_indices)
+    return ORICAProcessor(
+        X_init_pos,
+        orig_indices     = orig_indices,
+        online_whitening = online_whitening,
+        forgetfac        = forgetfac,
+        localstat        = localstat,
+        nsub             = nsub,
+        evalconverg      = evalconverg,
+        numpass          = numpass,
+    )
 
 
 def _cleanup_tmp():
@@ -616,7 +762,8 @@ async def upload_file(
 ):
     global _raw, _data, _data_filtered, _data_clean, _tmp_path
     global _channel_names, _sampling_rate, _channel_min, _channel_max, _n_samples, _mode
-    global _ica_labels, _ica_removed
+    global _ica_labels, _ica_removed, _session_id
+    _session_id += 1
 
     suffix = Path(file.filename).suffix.lower()
     if suffix not in (".edf", ".csv"):
@@ -672,8 +819,10 @@ async def upload_file(
             _sampling_rate = float(raw.info["sfreq"])
             _n_samples     = data.shape[1]
             _mode          = "offline"
-            _channel_min   = data.min(axis=1).tolist()
-            _channel_max   = data.max(axis=1).tolist()
+            # _channel_min = data.min(axis=1).tolist()               # échelle min/max absolue
+            # _channel_max = data.max(axis=1).tolist()
+            _channel_min   = np.percentile(data, 1, axis=1).tolist() # échelle percentile p1/p99
+            _channel_max   = np.percentile(data, 99, axis=1).tolist()
 
         else:
             text  = content.decode("utf-8", errors="replace")
@@ -698,8 +847,10 @@ async def upload_file(
             _sampling_rate = sr
             _n_samples     = data.shape[1]
             _mode          = "offline"
-            _channel_min   = data.min(axis=1).tolist()
-            _channel_max   = data.max(axis=1).tolist()
+            # _channel_min = data.min(axis=1).tolist()               # échelle min/max absolue
+            # _channel_max = data.max(axis=1).tolist()
+            _channel_min   = np.percentile(data, 1, axis=1).tolist() # échelle percentile p1/p99
+            _channel_max   = np.percentile(data, 99, axis=1).tolist()
 
         return {
             "status":        "ok",
@@ -713,8 +864,118 @@ async def upload_file(
         return {"status": "error", "message": str(e)}
 
 
-# ── Clean signal export ───────────────────────────────────────────────────────
+# ── ICLabel sur W convergé d'ORICA ───────────────────────────────────────────
 
+def _run_iclabel_on_orica() -> dict:
+    """
+    Reconstruit un objet MNE ICA à partir de W et sphere d'ORICA,
+    lance ICLabel, reconstruit le signal nettoyé.
+    Tourne dans run_in_executor (non-bloquant).
+    """
+    global _data, _data_filtered, _data_clean, _ica_labels, _ica_removed
+    global _mode, _n_samples, _channel_min, _channel_max
+
+    orica = _orica_global
+    n_comp = orica.n_comp
+
+    # ── Charger le signal complet en RAM ─────────────────────────────────────
+    full_data = _raw.get_data().astype(np.float64)
+
+    # ── Canaux positionnés ───────────────────────────────────────────────────
+    positioned, orig_indices, clean_to_orig = _get_positioned_channels(
+        full_data, _channel_names, _sampling_rate
+    )
+    orig_indices_arr = np.asarray(orig_indices)
+    X_pos = full_data[orig_indices_arr, :]
+
+    # ── Raw MNE positionné (requis par ICLabel) ───────────────────────────────
+    montage = mne.channels.make_standard_montage("standard_1005")
+    info    = mne.create_info(ch_names=positioned, sfreq=_sampling_rate, ch_types="eeg")
+    raw_pos = mne.io.RawArray(X_pos.copy(), info, verbose=False)
+    raw_pos.set_montage(montage, on_missing="ignore", verbose=False)
+
+    h_freq = min(100.0, _sampling_rate / 2.0 - 1.0)
+    raw_pos.filter(l_freq=1.0, h_freq=h_freq, verbose=False)
+    raw_pos.set_eeg_reference("average", projection=False, verbose=False)
+
+    # ── Reconstruire l'objet MNE ICA depuis W et sphere ──────────────────────
+    # Démixage complet en espace capteur : W_full = W @ sphere
+    # get_components() = (mixing_matrix_ @ pca_components_).T
+    # Avec pca_components_ = eye et unmixing_matrix_ = W_full :
+    # get_components() = (pinv(W_full) @ eye).T = pinv(W_full).T  ✓
+    W_full = orica.W @ orica.sphere      # (n_comp, n_comp)
+    W_full_inv = np.linalg.pinv(W_full)  # mixing matrix en espace capteur
+
+    ica = ICA(
+        n_components=n_comp,
+        method="infomax",
+        fit_params=dict(extended=True),
+        verbose=False,
+    )
+    ica.n_components_            = n_comp
+    ica.pca_components_          = np.eye(n_comp)
+    ica.pca_mean_                = np.zeros(n_comp)
+    ica.unmixing_matrix_         = W_full
+    ica.mixing_matrix_           = W_full_inv
+    ica.pca_explained_variance_  = np.ones(n_comp)
+    ica._fit_params              = dict(extended=True)
+    ica.info                     = raw_pos.info
+    ica.current_fit              = "raw"   # requis par mne-icalabel
+
+    # ── Classification ICLabel ────────────────────────────────────────────────
+    pred   = label_components(raw_pos, ica, method="iclabel")
+    labels = pred["labels"]
+    exclude = [i for i, lbl in enumerate(labels) if lbl in ARTIFACT_CLASSES]
+
+    # ── Reconstruction signal nettoyé ─────────────────────────────────────────
+    # Y = W @ sphere @ X_pos
+    # Y_clean[exclude] = 0
+    # X_pos_clean = sphere_inv @ W_inv @ Y_clean = pinv(W_full) @ Y_clean
+    Y       = W_full @ X_pos
+    Y_clean = Y.copy()
+    for idx in exclude:
+        Y_clean[idx, :] = 0
+
+    X_pos_clean = W_full_inv @ Y_clean
+
+    full_clean = full_data.copy()
+    for local_idx, orig_idx in enumerate(orig_indices):
+        full_clean[orig_idx] = X_pos_clean[local_idx]
+
+    # ── Mettre à jour l'état global pour streaming offline ────────────────────
+    _data          = full_data
+    _data_filtered = full_data.copy()
+    _data_clean    = full_clean
+    _ica_labels    = [labels[i] for i in exclude]
+    _ica_removed   = exclude
+    _mode          = "offline"
+    _n_samples     = full_data.shape[1]
+    # _channel_min = full_data.min(axis=1).tolist()               # échelle min/max absolue
+    # _channel_max = full_data.max(axis=1).tolist()
+    _channel_min   = np.percentile(full_data, 1, axis=1).tolist() # échelle percentile p1/p99
+    _channel_max   = np.percentile(full_data, 99, axis=1).tolist()
+
+    return {
+        "status":             "done",
+        "removed_components": exclude,
+        "labels":             [labels[i] for i in exclude],
+        "all_labels":         list(labels),
+        "n_components":       n_comp,
+    }
+
+
+@app.post("/apply_iclabel_orica")
+async def apply_iclabel_orica():
+    if _orica_global is None:
+        return {"status": "error", "message": "ORICA not initialized — run online mode first"}
+    if _raw is None:
+        return {"status": "error", "message": "No raw EDF data available"}
+    try:
+        loop   = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, _run_iclabel_on_orica)
+        return result
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 # ── Stream WebSocket ──────────────────────────────────────────────────────────
@@ -806,9 +1067,14 @@ async def websocket_endpoint(websocket: WebSocket):
                             _ica_removed = []
 
                 elif t == "set_ica":
-                    enabled = bool(cmd.get("enabled", False))
-                    n_comp  = int(cmd.get("n_components", 15))
-                    ica_enabled = enabled
+                    enabled          = bool(cmd.get("enabled",          False))
+                    ica_forgetfac    = str(cmd.get("forgetfac",         "cooling"))
+                    ica_localstat    = float(cmd.get("localstat",       np.inf))
+                    ica_nsub         = int(cmd.get("nsub",              0))
+                    ica_evalconverg  = bool(cmd.get("evalconverg",      True))
+                    ica_numpass      = int(cmd.get("numpass",           1))
+                    ica_online_white = bool(cmd.get("online_whitening", True))
+                    ica_enabled      = enabled
 
                     if enabled and _mode == "offline" and _data_filtered is not None:
                         # ── Mode offline : FastICA + ICLabel sur dataset complet ──
@@ -818,13 +1084,17 @@ async def websocket_endpoint(websocket: WebSocket):
                         }))
                         try:
                             # ICA s'applique sur la sortie de la méthode directe si disponible
-                            src  = _data_direct if _data_direct is not None else _data_filtered
-                            loop = asyncio.get_event_loop()
-                            result = await loop.run_in_executor(
+                            src        = _data_direct if _data_direct is not None else _data_filtered
+                            loop       = asyncio.get_event_loop()
+                            sid        = _session_id
+                            result     = await loop.run_in_executor(
                                 None,
                                 compute_ica_offline,
-                                src, _channel_names, _sampling_rate, n_comp,
+                                src, _channel_names, _sampling_rate,
                             )
+                            if _session_id != sid:
+                                ica_enabled = False
+                                return
                             _data_clean, _ica_removed, _ica_labels = result
                             await websocket.send_text(json.dumps({
                                 "type":               "ica_status",
@@ -849,14 +1119,20 @@ async def websocket_endpoint(websocket: WebSocket):
                             loop  = asyncio.get_event_loop()
                             orica = await loop.run_in_executor(
                                 None, _init_orica,
-                                _raw, _channel_names, _sampling_rate, n_comp,
+                                _raw, _channel_names, _sampling_rate,
+                                ica_online_white, ica_forgetfac, ica_localstat,
+                                ica_nsub, ica_evalconverg, ica_numpass,
                             )
                             global _orica_global
                             _orica_global = orica
                             await websocket.send_text(json.dumps({
-                                "type":   "ica_status",
-                                "status": "ready",
-                                "n_comp": orica.n_comp,
+                                "type":             "ica_status",
+                                "status":           "ready",
+                                "n_comp":           orica.n_comp,
+                                "forgetfac":        orica.FF_profile,
+                                "online_whitening": orica.online_whitening,
+                                "evalconverg":      orica.eval_converge,
+                                "numpass":          orica.numpass,
                             }))
                         except Exception as e:
                             ica_enabled = False
@@ -885,7 +1161,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         }))
                         try:
                             loop = asyncio.get_event_loop()
-                            clean, n_blinks, times = await loop.run_in_executor(
+                            clean, n_blinks, times, regions = await loop.run_in_executor(
                                 None,
                                 detect_and_remove_eyeblinks_zhang2017,
                                 _data_filtered, _channel_names, _sampling_rate,
@@ -896,12 +1172,13 @@ async def websocket_endpoint(websocket: WebSocket):
                             _ica_labels  = []
                             _ica_removed = []
                             await websocket.send_text(json.dumps({
-                                "type":          "direct_method_status",
-                                "status":        "done",
-                                "method":        method,
-                                "effective":     n_blinks > 0,
-                                "n_blinks":      n_blinks,
-                                "blink_times_s": times,
+                                "type":             "direct_method_status",
+                                "status":           "done",
+                                "method":           method,
+                                "effective":        n_blinks > 0,
+                                "n_blinks":         n_blinks,
+                                "blink_times_s":    times,
+                                "blink_regions_s":  regions,
                             }))
                         except Exception as e:
                             await websocket.send_text(json.dumps({
@@ -936,13 +1213,16 @@ async def websocket_endpoint(websocket: WebSocket):
 
                     if ica_enabled and orica is not None:
                         # ORICA : met à jour W, retourne activations IC
-                        ic_act = orica.process(window)
-                        await websocket.send_text(json.dumps({
+                        ic_act  = orica.process(window)
+                        payload = {
                             "type":           "ic_window",
                             "start":          pos,
                             "raw":            window.tolist(),
                             "ic_activations": ic_act.tolist(),
-                        }))
+                        }
+                        if orica.eval_converge:
+                            payload["nonstatidx"] = orica.nonstatidx
+                        await websocket.send_text(json.dumps(payload))
                     else:
                         await websocket.send_text(json.dumps({
                             "type":  "window",
@@ -955,7 +1235,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     src     = _data_filtered if _data_filtered is not None else _data
                     raw_win = src[:, pos : pos + window_size]
 
-                    if ica_enabled and _data_clean is not None:
+                    if _data_clean is not None:
                         # ICA prête → raw vs ICA clean
                         clean_win = _data_clean[:, pos : pos + window_size]
                         await websocket.send_text(json.dumps({
@@ -987,7 +1267,7 @@ async def websocket_endpoint(websocket: WebSocket):
             await asyncio.sleep(FRAME_INTERVAL)
 
         await websocket.send_text(json.dumps({"type": "done"}))
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, RuntimeError):
         pass
     finally:
         recv_task.cancel()

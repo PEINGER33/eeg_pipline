@@ -13,8 +13,9 @@ const String kBackendHttp = 'http://localhost:8000';
 const String kBackendWs   = 'ws://localhost:8000/ws';
 
 // Mobile (same WiFi network)
-// const String kBackendHttp = 'http://192.168.1.109:8000';
-// const String kBackendWs   = 'ws://192.168.1.109:8000/ws';
+// const String kBackendHttp = 'http://172.20.10.2:8000';
+// const String kBackendWs   = 'ws://172.20.10.2:8000/ws';
+
 
 void main() {
   runApp(const MyApp());
@@ -68,6 +69,7 @@ class _HomePageState extends State<HomePage> {
 
   // ── IC panel (online ORICA) ────────────────────────────────────────────────
   List<List<double>> _icActivations = [];
+  double?            _nonstatidx;
 
   // ── UI ─────────────────────────────────────────────────────────────────────
   String _status    = 'Start the Python server then import an EDF or CSV file';
@@ -92,10 +94,12 @@ class _HomePageState extends State<HomePage> {
   // ── ICA ────────────────────────────────────────────────────────────────────
   bool               _icaEnabled      = false;
   bool               _icaComputing    = false;
+  bool               _signalDone      = false;
   List<List<double>> _cleanWindowData = [];
   String             _cleanLabel      = 'Clean';
   List<String>       _icaLabels       = [];
   List<int>          _icaRemoved      = [];
+  List<List<double>> _blinkRegions    = []; // [[t_start, t_end], ...]
 
   double _windowSec = 5.0;
   static const List<double> kWindowOptions = [1, 2, 3, 4, 5, 10, 20, 30, 60, 120, 300];
@@ -130,7 +134,7 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _eyeBlinkEnabled   = next;
       _eyeBlinkComputing = next;
-      if (!next) _eyeBlinkNBlinks = 0;
+      if (!next) { _eyeBlinkNBlinks = 0; _blinkRegions = []; }
     });
     _wsChannel?.sink.add(jsonEncode({
       'type': 'set_direct_method', 'method': 'eyeblink', 'enabled': next,
@@ -149,10 +153,38 @@ class _HomePageState extends State<HomePage> {
       }
     });
     _wsChannel?.sink.add(jsonEncode({
-      'type': 'set_ica', 'enabled': next, 'n_components': 15,
+      'type': 'set_ica', 'enabled': next,
     }));
   }
 
+
+  Future<void> _applyIclabelOrica() async {
+    setState(() { _icaComputing = true; _status = 'ICLabel computing on ORICA W…'; });
+    try {
+      final response = await http.post(Uri.parse('$kBackendHttp/apply_iclabel_orica'));
+      final body     = jsonDecode(response.body) as Map<String, dynamic>;
+      if (body['status'] == 'done') {
+        final removed = List<int>.from(body['removed_components'] as List);
+        final labels  = List<String>.from(body['labels'] as List);
+        setState(() {
+          _icaComputing = false;
+          _icaRemoved   = removed;
+          _icaLabels    = labels;
+          _signalDone   = false;
+          _icaEnabled   = true;
+          _status = 'ICLabel done — ${removed.length} component(s) removed';
+        });
+        _connect();
+      } else {
+        setState(() {
+          _icaComputing = false;
+          _status = 'ICLabel error: ${body['message']}';
+        });
+      }
+    } catch (e) {
+      setState(() { _icaComputing = false; _status = 'ICLabel error: $e'; });
+    }
+  }
 
   // ── Import ────────────────────────────────────────────────────────────────
 
@@ -190,6 +222,7 @@ class _HomePageState extends State<HomePage> {
       final body     = await response.stream.bytesToString();
       if (response.statusCode == 200) {
         setState(() => _uploading = false);
+        _disconnect();
         _connect();
       } else {
         setState(() { _uploading = false; _status = 'Upload error: $body'; });
@@ -228,7 +261,7 @@ class _HomePageState extends State<HomePage> {
       _channelNames = []; _windowData = []; _cleanWindowData = [];
       _windowStart = 0; _icaEnabled = false; _icaComputing = false;
       _icaLabels = []; _icaRemoved = [];
-      _icActivations = [];
+      _icActivations = []; _nonstatidx = null; _signalDone = false;
       _eyeBlinkEnabled = false; _eyeBlinkComputing = false; _eyeBlinkNBlinks = 0;
       _status = 'Disconnected';
     });
@@ -243,7 +276,7 @@ class _HomePageState extends State<HomePage> {
       _windowStart = 0; _windowSec = 5.0;
       _icaEnabled = false; _icaComputing = false;
       _icaLabels = []; _icaRemoved = [];
-      _icActivations = [];
+      _icActivations = []; _nonstatidx = null; _signalDone = false;
       _eyeBlinkEnabled = false; _eyeBlinkComputing = false; _eyeBlinkNBlinks = 0;
       _status = 'Start the Python server then import an EDF or CSV file';
     });
@@ -292,6 +325,8 @@ void _onMessage(dynamic raw) {
           _windowStart   = msg['start'] as int;
           _windowData    = _parseChannels(msg['raw'] as List);
           _icActivations = _parseChannels(msg['ic_activations'] as List);
+          if (msg.containsKey('nonstatidx'))
+            _nonstatidx = (msg['nonstatidx'] as num).toDouble();
         });
 
       case 'direct_window':
@@ -345,9 +380,13 @@ void _onMessage(dynamic raw) {
         } else if (st == 'done') {
           final n         = msg['n_blinks'] as int? ?? 0;
           final effective = msg['effective'] as bool? ?? false;
+          final rawRegions = msg['blink_regions_s'] as List? ?? [];
           setState(() {
             _eyeBlinkComputing = false;
             _eyeBlinkNBlinks   = n;
+            _blinkRegions      = rawRegions
+                .map((r) => (r as List).map((e) => (e as num).toDouble()).toList())
+                .toList();
             _status = effective
                 ? 'Eye blink removal: $n blink(s) removed'
                 : 'Eye blink removal: no blinks detected in Fp1';
@@ -361,7 +400,14 @@ void _onMessage(dynamic raw) {
         }
 
       case 'done':
-        setState(() { _connected = false; _paused = false; _status = '✓ Simulation complete'; });
+        setState(() {
+          _connected   = false;
+          _paused      = false;
+          _signalDone  = _isOnline && _icaEnabled;
+          _status      = _signalDone
+              ? '✓ Signal complete — apply ICLabel on converged W'
+              : '✓ Simulation complete';
+        });
     }
   }
 
@@ -419,10 +465,12 @@ void _onMessage(dynamic raw) {
                         IconButton(
                           icon: Icon(Icons.remove_red_eye,
                               color: _eyeBlinkEnabled ? Colors.orange.shade300 : null),
-                          tooltip: _eyeBlinkEnabled
-                              ? 'Disable eye blink removal (Zhang 2017)'
-                              : 'Enable eye blink removal (Zhang 2017)',
-                          onPressed: _connected ? _toggleEyeBlink : null,
+                          tooltip: _icaEnabled
+                              ? 'Disable ICA first to use eye blink removal'
+                              : _eyeBlinkEnabled
+                                  ? 'Disable eye blink removal (Zhang 2017)'
+                                  : 'Enable eye blink removal (Zhang 2017)',
+                          onPressed: (_connected && !_icaEnabled) ? _toggleEyeBlink : null,
                         ),
                         if (_eyeBlinkEnabled && _eyeBlinkNBlinks > 0)
                           Positioned(
@@ -452,6 +500,13 @@ void _onMessage(dynamic raw) {
                         : isOffline ? 'Enable ICA (FastICA)' : 'Enable ICA (ORICA)',
                     onPressed: _connected ? _toggleIca : null,
                   ),
+            if (_signalDone)
+              FilledButton.icon(
+                onPressed: _icaComputing ? null : _applyIclabelOrica,
+                icon: const Icon(Icons.label, size: 16),
+                label: const Text('Apply ICLabel'),
+                style: FilledButton.styleFrom(backgroundColor: Colors.purple.shade700),
+              ),
             IconButton(
               icon: const Icon(Icons.close),
               tooltip: 'Close dataset',
@@ -524,6 +579,8 @@ void _onMessage(dynamic raw) {
                   icaRemoved: _icaRemoved,
                   icaOnline: icaOnline,
                   icActivations: _icActivations,
+                  nonstatidx: _nonstatidx,
+                  blinkRegions: _blinkRegions,
                 )
               : const _EmptyView(),
         ),
@@ -607,6 +664,8 @@ class _SignalView extends StatelessWidget {
   final List<int>                 icaRemoved;
   final bool                      icaOnline;
   final List<List<double>>        icActivations;
+  final double?                   nonstatidx;
+  final List<List<double>>        blinkRegions;
   const _SignalView({
     required this.channelNames,
     required this.samplingRate,
@@ -630,6 +689,8 @@ class _SignalView extends StatelessWidget {
     required this.icaRemoved,
     required this.icaOnline,
     required this.icActivations,
+    required this.nonstatidx,
+    required this.blinkRegions,
   });
 
   bool get _offlineDual => cleanWindowData.isNotEmpty;
@@ -721,7 +782,7 @@ class _SignalView extends StatelessWidget {
                   signalColor: Colors.blue,
                 )),
                 const VerticalDivider(width: 1, color: Colors.white12),
-                Expanded(child: _IcPanel(icActivations: icActivations)),
+                Expanded(child: _IcPanel(icActivations: icActivations, nonstatidx: nonstatidx)),
               ])
             : _offlineDual
             // FastICA offline: raw (left) + clean (right)
@@ -738,6 +799,9 @@ class _SignalView extends StatelessWidget {
                   channelNames: channelNames, windowData: cleanWindowData,
                   channelMin: channelMin, channelMax: channelMax,
                   signalColor: Colors.green,
+                  highlightRegions: blinkRegions,
+                  tStart: tStart,
+                  tEnd: tEnd,
                 )),
               ])
             // No ICA: full width raw
@@ -770,17 +834,52 @@ class _SignalView extends StatelessWidget {
 
 class _IcPanel extends StatelessWidget {
   final List<List<double>> icActivations;
-  const _IcPanel({required this.icActivations});
+  final double?            nonstatidx;
+  const _IcPanel({required this.icActivations, required this.nonstatidx});
 
   @override
   Widget build(BuildContext context) {
     final n = icActivations.length;
+
+    // Convergence : nonstatidx → 0 quand W converge
+    // On normalise sur [0,1] avec un seuil empirique de 5.0
+    final convProgress = nonstatidx != null
+        ? (1.0 - (nonstatidx! / 5.0).clamp(0.0, 1.0))
+        : 0.0;
+    final converged = nonstatidx != null && nonstatidx! < 0.5;
+
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Padding(
-        padding: const EdgeInsets.fromLTRB(8, 4, 8, 2),
-        child: Text('IC Activations',
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold,
-                color: Colors.purple.shade300)),
+        padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+        child: Row(children: [
+          Text('IC Activations',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold,
+                  color: Colors.purple.shade300)),
+          if (nonstatidx != null) ...[
+            const SizedBox(width: 8),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Text(
+                  converged ? 'Converged' : 'Converging…',
+                  style: TextStyle(
+                    fontSize: 9,
+                    color: converged ? Colors.green.shade400 : Colors.orange.shade300,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Text('(idx: ${nonstatidx!.toStringAsFixed(2)})',
+                    style: const TextStyle(fontSize: 9, color: Colors.grey)),
+              ]),
+              const SizedBox(height: 2),
+              LinearProgressIndicator(
+                value: convProgress,
+                backgroundColor: Colors.white10,
+                color: converged ? Colors.green.shade400 : Colors.orange.shade400,
+                minHeight: 3,
+              ),
+            ])),
+          ],
+        ]),
       ),
       Expanded(
         child: n == 0
@@ -822,6 +921,9 @@ class _ChannelPanel extends StatelessWidget {
   final List<double>       channelMin;
   final List<double>       channelMax;
   final Color              signalColor;
+  final List<List<double>> highlightRegions;
+  final double             tStart;
+  final double             tEnd;
 
   const _ChannelPanel({
     this.label,
@@ -831,6 +933,9 @@ class _ChannelPanel extends StatelessWidget {
     required this.channelMin,
     required this.channelMax,
     required this.signalColor,
+    this.highlightRegions = const [],
+    this.tStart = 0,
+    this.tEnd = 0,
   });
 
   @override
@@ -851,6 +956,9 @@ class _ChannelPanel extends StatelessWidget {
           yMin: i < channelMin.length ? channelMin[i] : null,
           yMax: i < channelMax.length ? channelMax[i] : null,
           signalColor: signalColor,
+          highlightRegions: highlightRegions,
+          tStart: tStart,
+          tEnd: tEnd,
         ),
       )),
     ]);
@@ -984,11 +1092,14 @@ class _TimeAxis extends CustomPainter {
 // ─────────────────────────────────────────────
 
 class _ChannelRow extends StatelessWidget {
-  final String       name;
-  final List<double> data;
-  final double?      yMin;
-  final double?      yMax;
-  final Color        signalColor;
+  final String             name;
+  final List<double>       data;
+  final double?            yMin;
+  final double?            yMax;
+  final Color              signalColor;
+  final List<List<double>> highlightRegions;
+  final double             tStart;
+  final double             tEnd;
 
   const _ChannelRow({
     required this.name,
@@ -996,6 +1107,9 @@ class _ChannelRow extends StatelessWidget {
     required this.signalColor,
     this.yMin,
     this.yMax,
+    this.highlightRegions = const [],
+    this.tStart = 0,
+    this.tEnd = 0,
   });
 
   @override
@@ -1006,7 +1120,10 @@ class _ChannelRow extends StatelessWidget {
         SizedBox(width: 48,
             child: Text(name, style: const TextStyle(fontSize: 11, color: Colors.grey))),
         Expanded(child: SizedBox(height: 40, child: CustomPaint(
-          painter: _MiniPlot(data: data, yMin: yMin, yMax: yMax, color: signalColor),
+          painter: _MiniPlot(
+            data: data, yMin: yMin, yMax: yMax, color: signalColor,
+            highlightRegions: highlightRegions, tStart: tStart, tEnd: tEnd,
+          ),
         ))),
       ]),
     );
@@ -1018,12 +1135,23 @@ class _ChannelRow extends StatelessWidget {
 // ─────────────────────────────────────────────
 
 class _MiniPlot extends CustomPainter {
-  final List<double> data;
-  final double?      yMin;
-  final double?      yMax;
-  final Color        color;
+  final List<double>       data;
+  final double?            yMin;
+  final double?            yMax;
+  final Color              color;
+  final List<List<double>> highlightRegions;
+  final double             tStart;
+  final double             tEnd;
 
-  const _MiniPlot({required this.data, required this.color, this.yMin, this.yMax});
+  const _MiniPlot({
+    required this.data,
+    required this.color,
+    this.yMin,
+    this.yMax,
+    this.highlightRegions = const [],
+    this.tStart = 0,
+    this.tEnd = 0,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1039,6 +1167,20 @@ class _MiniPlot extends CustomPainter {
     }
     final range = maxV - minV;
     if (range < 1e-10) return;
+
+    // Zones surlignées (eye blink removal)
+    final dur = tEnd - tStart;
+    if (highlightRegions.isNotEmpty && dur > 0) {
+      final hlPaint = Paint()..color = Colors.orange.withValues(alpha: 0.25);
+      for (final r in highlightRegions) {
+        final rStart = r[0]; final rEnd = r[1];
+        if (rEnd < tStart || rStart > tEnd) continue;
+        final x0 = ((rStart - tStart) / dur * size.width).clamp(0.0, size.width);
+        final x1 = ((rEnd   - tStart) / dur * size.width).clamp(0.0, size.width);
+        canvas.drawRect(Rect.fromLTWH(x0, 0, x1 - x0, size.height), hlPaint);
+      }
+    }
+
     final paint = Paint()..color = color..strokeWidth = 1.0..style = PaintingStyle.stroke;
     final path  = Path();
     bool  first = true;
@@ -1052,7 +1194,8 @@ class _MiniPlot extends CustomPainter {
 
   @override
   bool shouldRepaint(_MiniPlot old) =>
-      old.data != data || old.yMin != yMin || old.yMax != yMax || old.color != color;
+      old.data != data || old.yMin != yMin || old.yMax != yMax || old.color != color ||
+      old.highlightRegions != highlightRegions || old.tStart != tStart || old.tEnd != tEnd;
 }
 
 // ─────────────────────────────────────────────
