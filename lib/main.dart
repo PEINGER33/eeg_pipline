@@ -7,14 +7,14 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 
-// ── Backend URLs ───────────────────────────────────────────────────────────
+//  Backend URLs
 // Desktop / Chrome
-// const String kBackendHttp = 'http://localhost:8000';
-// const String kBackendWs   = 'ws://localhost:8000/ws';
+const String kBackendHttp = 'http://localhost:8000';
+const String kBackendWs   = 'ws://localhost:8000/ws';
 
 // Mobile (same WiFi network)
-const String kBackendHttp = 'http://192.168.114.119:8000';
-const String kBackendWs   = 'ws://192.168.114.119:8000/ws';
+// const String kBackendHttp = 'http://192.168.114.119:8000';
+// const String kBackendWs   = 'ws://192.168.114.119:8000/ws';
 
 
 void main() {
@@ -48,7 +48,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  // ── WebSocket ──────────────────────────────────────────────────────────────
+  //  WebSocket 
   WebSocketChannel?   _wsChannel;
   StreamSubscription? _wsSub;
   bool _connected  = false;
@@ -56,27 +56,27 @@ class _HomePageState extends State<HomePage> {
   bool _uploading  = false;
   bool _paused     = false;
 
-  // ── Metadata ───────────────────────────────────────────────────────────────
+  // Metadata 
   List<String> _channelNames = [];
   double       _samplingRate = 256.0;
   int          _numSamples   = 0;
   List<double> _channelMin   = [];
   List<double> _channelMax   = [];
 
-  // ── Current window ─────────────────────────────────────────────────────────
+  //  Current window
   List<List<double>> _windowData  = [];
   int                _windowStart = 0;
 
-  // ── IC panel (online ORICA) ────────────────────────────────────────────────
+  // IC panel (online ORICA) 
   List<List<double>> _icActivations = [];
   double?            _nonstatidx;
 
-  // ── UI ─────────────────────────────────────────────────────────────────────
+  // UI
   String _status    = 'Start the Python server then import an EDF or CSV file';
   bool   _landscape = false;
   String _mode      = '';
 
-  // ── Preprocessing ──────────────────────────────────────────────────────────
+  //  Preprocessing
   bool   _showPreprocessing = false;
   bool   _notchEnabled      = false;
   double _notchFreq         = 50.0;
@@ -86,12 +86,12 @@ class _HomePageState extends State<HomePage> {
   double _bandpassLow       = 1.0;
   double _bandpassHigh      = 40.0;
 
-  // ── Eye blink removal (Zhang 2017) ─────────────────────────────────────────
+  // Eye blink removal
   bool _eyeBlinkEnabled   = false;
   bool _eyeBlinkComputing = false;
   int  _eyeBlinkNBlinks   = 0;
 
-  // ── ICA ────────────────────────────────────────────────────────────────────
+  // ICA
   bool               _icaEnabled      = false;
   bool               _icaComputing    = false;
   bool               _iclabelApplied  = false;
@@ -110,7 +110,7 @@ class _HomePageState extends State<HomePage> {
 
   bool get _isOnline => _mode == 'online';
 
-  // ── WebSocket commands ────────────────────────────────────────────────────
+  // WebSocket commands
 
   void _setWindowSec(double secs) {
     setState(() => _windowSec = secs);
@@ -189,7 +189,7 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // ── Import ────────────────────────────────────────────────────────────────
+  // Import
 
   Future<void> _importCsv() => _pickAndUpload('csv', 'offline');
 
@@ -235,7 +235,7 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // ── WebSocket ─────────────────────────────────────────────────────────────
+  // WebSocket
 
   void _connect() {
     if (_connecting || _connected) return;
@@ -439,10 +439,16 @@ void _onMessage(dynamic raw) {
     final hasData   = _channelNames.isNotEmpty;
     final isOffline = _mode == 'offline';
     final icaOnline = _icaEnabled && _isOnline;
+    final isMobile  = MediaQuery.of(context).size.shortestSide < 600;
+    final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('EEG ICA Pipeline'),
+        toolbarHeight: isPortrait ? 32 : isMobile ? 28 : kToolbarHeight,
+        title: isMobile ? null : const Text('EEG ICA Pipeline'),
+        iconTheme: isMobile
+            ? const IconThemeData(size: 18)
+            : null,
         actions: [
           IconButton(
             icon: Icon(_landscape ? Icons.stay_current_portrait : Icons.stay_current_landscape),
@@ -589,9 +595,9 @@ void _onMessage(dynamic raw) {
   }
 }
 
-// ─────────────────────────────────────────────
+// 
 //  Status bar
-// ─────────────────────────────────────────────
+
 
 class _StatusBar extends StatelessWidget {
   final String status;
@@ -600,26 +606,30 @@ class _StatusBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isMobile   = MediaQuery.of(context).size.shortestSide < 600;
+    final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
+    final vPad = isMobile ? 2.0 : 8.0;
+    final fontSize = isMobile ? 9.0 : 12.0;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: vPad),
       color: Theme.of(context).colorScheme.surface,
       child: Row(children: [
         if (running)
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(status, style: const TextStyle(fontSize: 12)),
+            Text(status, style: TextStyle(fontSize: fontSize)),
             const SizedBox(height: 4),
             const LinearProgressIndicator(),
           ]))
         else
-          Expanded(child: Text(status, style: const TextStyle(fontSize: 12))),
+          Expanded(child: Text(status, style: TextStyle(fontSize: fontSize))),
       ]),
     );
   }
 }
 
-// ─────────────────────────────────────────────
+//
 //  Empty view
-// ─────────────────────────────────────────────
+//
 
 class _EmptyView extends StatelessWidget {
   const _EmptyView();
@@ -637,9 +647,9 @@ class _EmptyView extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────
+//
 //  Signal view (raw + optional IC panel / clean)
-// ─────────────────────────────────────────────
+//
 
 class _SignalView extends StatelessWidget {
   final List<String>              channelNames;
@@ -695,6 +705,7 @@ class _SignalView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isMobile  = MediaQuery.of(context).size.shortestSide < 600;
     final windowEnd = (windowStart + windowSize).clamp(0, numSamples);
     final tStart    = windowStart / samplingRate;
     final tEnd      = windowEnd   / samplingRate;
@@ -705,10 +716,10 @@ class _SignalView extends StatelessWidget {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       // ── Header ───────────────────────────────────────────────
       Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+        padding: EdgeInsets.fromLTRB(16, isMobile ? 4 : 12, 16, isMobile ? 2 : 4),
         child: Row(children: [
           Text('EEG Signal — ${channelNames.length} channels',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              style: TextStyle(fontSize: isMobile ? 11 : 16, fontWeight: FontWeight.bold)),
           const SizedBox(width: 8),
           if (simulating || paused)
             IconButton(
@@ -749,7 +760,7 @@ class _SignalView extends StatelessWidget {
         ]),
       ),
 
-      // ── Progress bar ──────────────────────────────────────────
+      // Progress bar
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
         child: LayoutBuilder(builder: (_, constraints) {
@@ -768,7 +779,7 @@ class _SignalView extends StatelessWidget {
         }),
       ),
 
-      // ── Signal panels ─────────────────────────────────────────
+      // Signal panels
       Expanded(
         child: icaOnline
             // ORICA: raw (left) + IC panel (right)
@@ -810,11 +821,11 @@ class _SignalView extends StatelessWidget {
               ),
       ),
 
-      // ── ICA legend (offline only) ─────────────────────────────
+      // ICA legend (offline only)
       if (_offlineDual && icaRemoved.isNotEmpty)
         _IcaLegend(removed: icaRemoved, labels: icaLabels),
 
-      // ── Time axis ─────────────────────────────────────────────
+      // Time axis
       Padding(
         padding: const EdgeInsets.only(left: 64, right: 16, bottom: 8),
         child: SizedBox(height: 20, child: CustomPaint(
@@ -826,9 +837,9 @@ class _SignalView extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────
+// 
 //  IC panel
-// ─────────────────────────────────────────────
+//
 
 class _IcPanel extends StatelessWidget {
   final List<List<double>> icActivations;
@@ -870,12 +881,12 @@ class _IcPanel extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────
+// 
 //  IC row (time series)
 
-// ─────────────────────────────────────────────
+// 
 //  Channel panel
-// ─────────────────────────────────────────────
+// 
 
 class _ChannelPanel extends StatelessWidget {
   final String?            label;
@@ -929,9 +940,9 @@ class _ChannelPanel extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────
+// 
 //  ICA legend (offline only)
-// ─────────────────────────────────────────────
+// 
 
 class _IcaLegend extends StatelessWidget {
   final List<int>    removed;
@@ -979,9 +990,9 @@ class _IcaLegend extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────
+// 
 //  Progress scrubber
-// ─────────────────────────────────────────────
+// 
 
 class _ProgressScrubber extends CustomPainter {
   final double progress;
@@ -1008,9 +1019,9 @@ class _ProgressScrubber extends CustomPainter {
   bool shouldRepaint(_ProgressScrubber old) => old.progress != progress;
 }
 
-// ─────────────────────────────────────────────
+// 
 //  Time axis
-// ─────────────────────────────────────────────
+// 
 
 class _TimeAxis extends CustomPainter {
   final double tStart;
@@ -1051,9 +1062,9 @@ class _TimeAxis extends CustomPainter {
   bool shouldRepaint(_TimeAxis old) => old.tStart != tStart || old.tEnd != tEnd;
 }
 
-// ─────────────────────────────────────────────
+// 
 //  Channel row
-// ─────────────────────────────────────────────
+// 
 
 class _ChannelRow extends StatelessWidget {
   final String             name;
@@ -1094,9 +1105,9 @@ class _ChannelRow extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────
+// 
 //  Mini signal plot
-// ─────────────────────────────────────────────
+// 
 
 class _MiniPlot extends CustomPainter {
   final List<double>       data;
@@ -1132,7 +1143,7 @@ class _MiniPlot extends CustomPainter {
     final range = maxV - minV;
     if (range < 1e-10) return;
 
-    // Zones surlignées (eye blink removal)
+    // Highlighted zones (eye blink removal)
     final dur = tEnd - tStart;
     if (highlightRegions.isNotEmpty && dur > 0) {
       final hlPaint = Paint()..color = Colors.orange.withValues(alpha: 0.25);
@@ -1162,9 +1173,9 @@ class _MiniPlot extends CustomPainter {
       old.highlightRegions != highlightRegions || old.tStart != tStart || old.tEnd != tEnd;
 }
 
-// ─────────────────────────────────────────────
+// 
 //  Preprocessing bar
-// ─────────────────────────────────────────────
+// 
 
 class _PreprocessingBar extends StatelessWidget {
   final bool   notchEnabled;
@@ -1198,8 +1209,9 @@ class _PreprocessingBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.shortestSide < 600;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: EdgeInsets.symmetric(horizontal: isMobile ? 8 : 16, vertical: isMobile ? 3 : 6),
       color: const Color(0xFF151B2A),
       child: Row(children: [
         const Text('Preprocessing', style: TextStyle(fontSize: 11, color: Colors.grey)),
